@@ -1,6 +1,6 @@
 {
   "name": "@aegis/sdk",
-  "version": "0.0.1",
+  "version": "0.0.0",
   "description": "Unified SDK for Starknet wallet management with in-app wallets and gasless transactions",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
