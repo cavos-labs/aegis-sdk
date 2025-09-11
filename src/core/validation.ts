@@ -118,13 +118,13 @@ export function validateInternalConfig(config: InternalAegisConfig): void {
   }
 
   // Validate app metadata
-  if (!config.appMetadata || !config.appMetadata.name) {
-    throw new AegisError(
-      AegisErrorType.BACKEND_ERROR,
-      AegisErrorCode.INVALID_API_RESPONSE,
-      'Backend did not provide valid app metadata'
-    );
-  }
+  // if (!config.appMetadata || !config.appMetadata.name) {
+  //   throw new AegisError(
+  //     AegisErrorType.BACKEND_ERROR,
+  //     AegisErrorCode.INVALID_API_RESPONSE,
+  //     'Backend did not provide valid app metadata'
+  //   );
+  // }
 }
 
 /**
