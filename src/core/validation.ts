@@ -91,13 +91,13 @@ export function validateInternalConfig(config: InternalAegisConfig): void {
     );
   }
 
-  if (!config.analyticsEndpoint || !isValidUrl(config.analyticsEndpoint)) {
-    throw new AegisError(
-      AegisErrorType.BACKEND_ERROR,
-      AegisErrorCode.INVALID_API_RESPONSE,
-      'Analytics endpoint is missing or invalid'
-    );
-  }
+  // if (!config.analyticsEndpoint || !isValidUrl(config.analyticsEndpoint)) {
+  //   throw new AegisError(
+  //     AegisErrorType.BACKEND_ERROR,
+  //     AegisErrorCode.INVALID_API_RESPONSE,
+  //     'Analytics endpoint is missing or invalid'
+  //   );
+  // }
 
   if (!Array.isArray(config.supportedNetworks) || config.supportedNetworks.length === 0) {
     throw new AegisError(
