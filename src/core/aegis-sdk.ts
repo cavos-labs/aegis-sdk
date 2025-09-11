@@ -7,6 +7,7 @@ import {
   NetworkType,
   PaymasterConfig
 } from '../types';
+import { CryptoUtils } from './crypto';
 
 import { SecureStorage } from '../storage/secure-storage';
 import { NetworkManager } from '../network/network-manager';
@@ -69,8 +70,21 @@ export class AegisSDK {
       // Generate new private key
       const privateKey = this.accountManager.generatePrivateKey();
       
+      if (this.config.enableLogging) {
+        console.log('🔑 Generated private key:', privateKey);
+      }
+      
+      // Validate private key
+      if (!CryptoUtils.isValidPrivateKey(privateKey)) {
+        throw new Error('Generated private key is invalid');
+      }
+      
       // Connect to the account
       const account = await this.accountManager.connectAccount(privateKey);
+      
+      if (this.config.enableLogging) {
+        console.log('🔗 Connected to account:', account.address);
+      }
       
       // Deploy the account
       await this.accountManager.deployAccount(privateKey);
@@ -87,13 +101,17 @@ export class AegisSDK {
       this.contractManager.setAccount(account);
       
       if (this.config.enableLogging) {
-        console.log('✅ Account deployed:', account.address);
+        console.log('✅ Account deployed successfully:', account.address);
       }
       
       return privateKey;
     } catch (error) {
       if (this.config.enableLogging) {
         console.error('❌ Deploy account failed:', error);
+        console.error('Error details:', {
+          message: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined
+        });
       }
       throw error;
     }

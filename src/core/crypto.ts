@@ -38,15 +38,16 @@ export class CryptoUtils {
    * Generate a cryptographically secure private key
    */
   static generateSecurePrivateKey(): string {
-    const randomBytes = new Uint8Array(32);
+    const randomBytes = new Uint8Array(31); // 31 bytes to ensure < field order
     crypto.getRandomValues(randomBytes);
     
-    // Convert to hex string with 0x prefix, ensuring 64 hex characters
+    // Convert to hex string with 0x prefix
     const hexString = Array.from(randomBytes, byte => 
       byte.toString(16).padStart(2, '0')
     ).join('');
     
-    return `0x0${hexString.slice(1)}`; // Ensure it starts with 0x0 for compatibility
+    // Ensure it starts with 0x and has proper length
+    return `0x0${hexString}`;
   }
 
   /**
@@ -178,15 +179,23 @@ export class CryptoUtils {
         return false;
       }
       
-      // Check if it's the right length (64 hex characters + 0x prefix)
-      if (privateKey.length !== 66) {
+      // Check if it's the right length (64 hex characters + 0x prefix, or 63 for our format)
+      if (privateKey.length < 64 || privateKey.length > 66) {
+        return false;
+      }
+      
+      // Check if all characters after 0x are valid hex
+      const hexPart = privateKey.slice(2);
+      const isValidHex = /^[0-9a-fA-F]*$/.test(hexPart);
+      if (!isValidHex) {
         return false;
       }
       
       // Try to derive public key (will throw if invalid)
       this.getPublicKey(privateKey);
       return true;
-    } catch {
+    } catch (error) {
+      console.error('Private key validation error:', error);
       return false;
     }
   }
