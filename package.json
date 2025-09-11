@@ -1,0 +1,77 @@
+{
+  "name": "@aegis/sdk",
+  "version": "0.0.1",
+  "description": "Unified SDK for Starknet wallet management with in-app wallets and gasless transactions",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    },
+    "./web": {
+      "types": "./dist/web.d.ts",
+      "import": "./dist/web.mjs",
+      "require": "./dist/web.js"
+    },
+    "./native": {
+      "types": "./dist/native.d.ts",
+      "import": "./dist/native.mjs",
+      "require": "./dist/native.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src/ --ext .ts,.tsx",
+    "lint:fix": "eslint src/ --ext .ts,.tsx --fix"
+  },
+  "keywords": [
+    "starknet",
+    "wallet",
+    "blockchain",
+    "web3",
+    "gasless",
+    "aegis"
+  ],
+  "author": "Aegis",
+  "license": "MIT",
+  "peerDependencies": {
+    "react": ">=18.0.0",
+    "react-native": ">=0.70.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    },
+    "react-native": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "starknet": "^6.11.0",
+    "@avnu/gasless-sdk": "^0.1.8",
+    "ethers": "^6.14.3"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.3",
+    "@types/react-native": "^0.72.0",
+    "typescript": "^5.5.4",
+    "tsup": "^8.2.4",
+    "eslint": "^8.57.0",
+    "@typescript-eslint/eslint-plugin": "^7.18.0",
+    "@typescript-eslint/parser": "^7.18.0"
+  },
+  "optionalDependencies": {
+    "@react-native-async-storage/async-storage": "^1.23.1"
+  }
+}
