@@ -81,7 +81,7 @@ export class BackendClient {
         paymasterApiKey: "c37c52b7-ea5a-4426-8121-329a78354b0b",
         backendUrl: "https://services.cavos.xyz",
         analyticsEndpoint: "",
-        supportedNetworks: ["mainnet, sepolia"],
+        supportedNetworks: ["mainnet", "sepolia"],
         appMetadata: {name: "", version: "", features: []},
       };
 
