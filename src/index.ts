@@ -1,3 +1,6 @@
+// Main SDK class (recommended)
+export { AegisSDK } from './core/aegis-sdk';
+
 // Main SDK exports
 export * from './types';
 export * from './context/wallet-context';
@@ -15,5 +18,5 @@ export { BalanceManager } from './balance/balance-manager';
 // Hooks (re-export from context)
 export { useWallet } from './context/wallet-context';
 
-// Default export for convenience
-export { WalletProvider as default } from './context/wallet-context';
+// Default export for convenience (SDK class)
+export { AegisSDK as default } from './core/aegis-sdk';
