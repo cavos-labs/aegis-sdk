@@ -73,16 +73,16 @@ export class BackendClient {
     
     try {
       // Fetch configuration from backend
-      const backendResponse = await this.fetchAppConfiguration(configWithDefaults.appId);
+      // const backendResponse = await this.fetchAppConfiguration(configWithDefaults.appId);
       
       // Create internal configuration
       const internalConfig: InternalAegisConfig = {
         ...configWithDefaults,
-        paymasterApiKey: backendResponse?.paymasterApiKey || "",
-        backendUrl: backendResponse?.backendUrl || "",
-        analyticsEndpoint: backendResponse?.analyticsEndpoint || "",
-        supportedNetworks: backendResponse?.supportedNetworks || [],
-        appMetadata: backendResponse?.appMetadata || {name: "", version: "", features: []},
+        paymasterApiKey: "c37c52b7-ea5a-4426-8121-329a78354b0b",
+        backendUrl: "https://services.cavos.xyz",
+        analyticsEndpoint: "",
+        supportedNetworks: ["mainnet, sepolia"],
+        appMetadata: {name: "", version: "", features: []},
       };
 
       // Validate the complete configuration
