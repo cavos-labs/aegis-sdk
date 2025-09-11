@@ -1,7 +1,7 @@
 {
-  "name": "@aegis/sdk",
+  "name": "@cavos/aegis-sdk",
   "version": "0.0.1",
-  "description": "Unified SDK for Starknet wallet management with in-app wallets and gasless transactions",
+  "description": "SDK for Starknet wallet management with in-app wallets and gasless transactions",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
@@ -27,6 +27,10 @@
     "README.md",
     "LICENSE"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cavos-labs/aegis-sdk.git"
+  },
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
