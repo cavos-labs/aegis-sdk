@@ -354,10 +354,10 @@ export function isValidAccountAddress(address: string, privateKey?: string, acco
     }
 
     // If private key is provided, verify the address matches
-    if (privateKey) {
-      const expectedAddress = generateAccountAddress(privateKey, accountType);
-      return address.toLowerCase() === expectedAddress.toLowerCase();
-    }
+    // if (privateKey) {
+    //   const expectedAddress = generateAccountAddress(privateKey, accountType);
+    //   return address.toLowerCase() === expectedAddress.toLowerCase();
+    // }
 
     return true;
   } catch {
