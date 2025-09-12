@@ -1,4 +1,4 @@
-import { Account, Call, CallData, hash, ec, CairoCustomEnum, CairoOption } from 'starknet';
+import { Account, Call } from 'starknet';
 import { 
   WalletConfig, 
   TransactionResult, 
@@ -62,399 +62,62 @@ export class AegisSDK {
   // ===============================
 
   /**
-   * Deploy a new account (creates private key automatically)
-   * Returns the private key - store it securely!
+   * Deploy a new account with gasless deployment via AVNU
+   * @returns The private key for the deployed account - store it securely!
+   * @throws {Error} If deployment fails or configuration is invalid
    */
   async deployAccount(): Promise<string> {
-    try {
-      // Generate new private key
-      const privateKey = this.accountManager.generatePrivateKey();
-      
-      if (this.config.enableLogging) {
-        console.log('🔑 Generated private key:', privateKey);
-      }
-      
-      // Validate private key
-      if (!CryptoUtils.isValidPrivateKey(privateKey)) {
-        throw new Error('Generated private key is invalid');
-      }
-      
-      // Calculate the correct address using AVNU's method (before connecting)
-      const correctAddress = this.calculateAVNUAccountAddress(privateKey);
-      
-      // Deploy the account using AVNU's direct API endpoints
-      await this.deployAccountUsingPOWPaymaster(privateKey);
-      
-      // Connect to the account with the correct address
-      const provider = this.network.getProvider();
-      const account = new Account(provider, correctAddress, privateKey);
-      
-      if (this.config.enableLogging) {
-        console.log('🔗 Connected to account:', account.address);
-      }
-      
-      // Store the account (we'll need to handle storage separately since AccountManager uses different address calculation)
-      // await this.accountManager.storeKeyAndConnect(privateKey, this.config.appName);
-      
-      // Set as current account
-      this.currentAccount = account;
-      this.currentPrivateKey = privateKey;
-      
-      // Update managers
-      this.transactionManager.setAccount(account);
-      this.contractManager.setAccount(account);
-      
-      if (this.config.enableLogging) {
-        console.log('✅ Account deployed successfully:', account.address);
-      }
-      
-      return privateKey;
-    } catch (error) {
-      if (this.config.enableLogging) {
-        console.error('❌ Deploy account failed:', error);
-        console.error('Error details:', {
-          message: error instanceof Error ? error.message : String(error),
-          stack: error instanceof Error ? error.stack : undefined
-        });
-      }
-      throw error;
-    }
-  }
-
-  /**
-   * Calculate account address using AVNU's method (same as deployment)
-   */
-  private calculateAVNUAccountAddress(privateKey: string): string {
-    const argentXaccountClassHash = "0x036078334509b514626504edc9fb252328d1a240e4e948bef8d0c08dff45927f";
-    const starkKeyPubAX = ec.starkCurve.getStarkKey(privateKey);
-
-    const axSigner = new CairoCustomEnum({
-      Starknet: { pubkey: starkKeyPubAX },
-    });
-    const axGuardian = new CairoOption(1);
-    const ArgentAAConstructorCallData = CallData.compile({
-      owner: axSigner,
-      guardian: axGuardian,
-    });
-
-    return hash.calculateContractAddressFromHash(
-      argentXaccountClassHash,
-      argentXaccountClassHash,
-      ArgentAAConstructorCallData,
-      0
-    );
-  }
-
-  /**
-   * POW's exact account class hash function
-   */
-  private getAccountClassHash(accountClassName?: string): string {
-    // Default to Argent X account class hash
-    if (!accountClassName)
-      return "0x01a736d6ed154502257f02b1ccdf4d9d1089f80811cd6acad48e6b6a9d1f2003";
-
-    if (accountClassName === "argentX") {
-      return "0x01a736d6ed154502257f02b1ccdf4d9d1089f80811cd6acad48e6b6a9d1f2003";
-    } else if (accountClassName === "devnet") {
-      return "0x02b31e19e45c06f29234e06e2ee98a9966479ba3067f8785ed972794fdb0065c";
-    } else {
-      if (this.config.enableLogging)
-        console.error(`Unsupported account class: ${accountClassName}`);
-      return "";
-    }
-  }
-
-  /**
-   * POW's exact deploy calldata function
-   */
-  private getDeployCalldata(privateKey: string, accountClassName?: string) {
-    // Default to Argent X account class calldata
-    if (!accountClassName) {
-      const starkKeyPub = ec.starkCurve.getStarkKey(privateKey);
-      const constructorCalldata = CallData.compile({
-        owner: starkKeyPub,
-        guardian: "0x0",
-      });
-      return constructorCalldata;
-    }
-    if (accountClassName === "argentX") {
-      const starkKeyPub = ec.starkCurve.getStarkKey(privateKey);
-      const constructorCalldata = CallData.compile({
-        owner: starkKeyPub,
-        guardian: "0x0",
-      });
-      return constructorCalldata;
-    } else if (accountClassName === "devnet") {
-      const starkKeyPub = ec.starkCurve.getStarkKey(privateKey);
-      const constructorCalldata = CallData.compile({ pub_key: starkKeyPub });
-      return constructorCalldata;
-    } else {
-      if (this.config.enableLogging)
-        console.error(`Unsupported account class: ${accountClassName}`);
-      return CallData.compile({});
-    }
-  }
-
-  /**
-   * POW's exact generate account address function
-   */
-  private generateAccountAddress(privateKey: string, accountClassName?: string) {
-    const starkKeyPub = ec.starkCurve.getStarkKey(privateKey);
-    const constructorCalldata = this.getDeployCalldata(privateKey, accountClassName);
-    const contractAddress = hash.calculateContractAddressFromHash(
-      starkKeyPub,
-      this.getAccountClassHash(accountClassName),
-      constructorCalldata,
-      0,
-    );
-    return contractAddress;
-  }
-
-  /**
-   * Deploy account exactly like POW project does - no changes
-   */
-  private async deployAccountExactlyLikePOW(privateKey: string, accountClassName?: string): Promise<void> {
-    const provider = this.network.getProvider();
-
-    if (!provider) {
-      console.error("Provider is not initialized.");
-      return;
+    if (!this.config.paymasterApiKey) {
+      throw new Error('AVNU API key is required for gasless deployment');
     }
 
-    const starkKeyPub = ec.starkCurve.getStarkKey(privateKey);
-    const contractAddress = this.generateAccountAddress(
-      privateKey,
-      accountClassName,
-    );
-    const constructorCalldata = this.getDeployCalldata(
-      privateKey,
-      accountClassName,
-    );
-
-    const accountInstance = new Account(
-      provider,
-      contractAddress,
-      privateKey,
-    );
+    // Generate secure private key
+    const privateKey = this.accountManager.generatePrivateKey();
     
-    const { transaction_hash, contract_address } = await accountInstance
-      .deployAccount(
-        {
-          classHash: this.getAccountClassHash(accountClassName),
-          constructorCalldata: constructorCalldata,
-          addressSalt: starkKeyPub,
-          contractAddress: contractAddress,
-        },
-        { maxFee: 100_000_000_000_000 },
-      )
-      .catch((error) => {
-        // POW's exact error handling - assume already deployed
-        return {
-          transaction_hash: "Account already exists",
-          contract_address: contractAddress,
-        };
-      });
-      
-    if (transaction_hash === "Account already exists") {
-      // Connect to existing account
-      this.currentAccount = new Account(provider, contractAddress, privateKey);
-      this.currentPrivateKey = privateKey;
-      if (this.config.enableLogging) {
-        console.log('Account already exists, connected:', contractAddress);
-      }
-      return;
+    if (this.config.enableLogging) {
+      console.log('Generated new private key');
     }
     
-    await provider.waitForTransaction(transaction_hash);
-    if (this.config.enableLogging)
-      console.log("✅ New account created.\n   address =", contract_address);
+    // Deploy using AccountManager's AVNU deployment
+    await this.accountManager.deployAccountWithAVNU(privateKey, this.config.paymasterApiKey);
     
-    // Connect to the newly deployed account
-    this.currentAccount = new Account(provider, contract_address, privateKey);
+    // Connect to the deployed account
+    const account = await this.accountManager.connectAVNUAccount(privateKey);
+    
+    // Set as current account
+    this.currentAccount = account;
     this.currentPrivateKey = privateKey;
-  }
-
-  /**
-   * POW's exact deployment data function
-   */
-  private getDeploymentData(privateKey: string, accountClassName?: string) {
-    const deploymentData = {
-      class_hash: this.getAccountClassHash(accountClassName),
-      calldata: this.getDeployCalldataHex(privateKey, accountClassName),
-      salt: ec.starkCurve.getStarkKey(privateKey),
-      unique: "0x0",
-    };
-    return deploymentData;
-  }
-
-  /**
-   * POW's exact deploy calldata hex function
-   */
-  private getDeployCalldataHex(privateKey: string, accountClassName?: string) {
-    // Default to Argent X account class calldata
-    if (!accountClassName) {
-      const starkKeyPub = ec.starkCurve.getStarkKey(privateKey);
-      return [starkKeyPub, "0x0"];
-    }
-    if (accountClassName === "argentX") {
-      const starkKeyPub = ec.starkCurve.getStarkKey(privateKey);
-      return [starkKeyPub, "0x0"];
-    } else if (accountClassName === "devnet") {
-      const starkKeyPub = ec.starkCurve.getStarkKey(privateKey);
-      return [starkKeyPub];
-    } else {
-      if (this.config.enableLogging)
-        console.error(`Unsupported account class: ${accountClassName}`);
-      return [];
-    }
-  }
-
-  /**
-   * Deploy account using AVNU direct API endpoints exactly like cavos-wallet-provider
-   */
-  private async deployAccountUsingPOWPaymaster(privateKey: string, accountClassName?: string): Promise<void> {
-    const provider = this.network.getProvider();
     
-    if (!provider) {
-      console.error("Provider is not initialized.");
-      return;
+    // Update managers
+    this.transactionManager.setAccount(account);
+    this.contractManager.setAccount(account);
+    
+    if (this.config.enableLogging) {
+      console.log(`Account deployed successfully: ${account.address}`);
     }
-
-    try {
-      if (this.config.enableLogging) {
-        console.log("Generating new ArgentX wallet...");
-      }
-
-      // Use ArgentX class hash like cavos-wallet-provider
-      const argentXaccountClassHash = "0x036078334509b514626504edc9fb252328d1a240e4e948bef8d0c08dff45927f";
-      const starkKeyPubAX = ec.starkCurve.getStarkKey(privateKey);
-
-      if (this.config.enableLogging) {
-        console.log("Generated stark key:", starkKeyPubAX);
-      }
-
-      // Create constructor calldata exactly like cavos-wallet-provider
-      const axSigner = new CairoCustomEnum({
-        Starknet: { pubkey: starkKeyPubAX },
-      });
-      const axGuardian = new CairoOption(1);
-      const ArgentAAConstructorCallData = CallData.compile({
-        owner: axSigner,
-        guardian: axGuardian,
-      });
-
-      // Calculate contract address exactly like cavos-wallet-provider
-      const AXcontractAddress = hash.calculateContractAddressFromHash(
-        argentXaccountClassHash,
-        argentXaccountClassHash,
-        ArgentAAConstructorCallData,
-        0
-      );
-
-      if (this.config.enableLogging) {
-        console.log("Calculated ArgentX contract address:", AXcontractAddress);
-      }
-
-      // Prepare deployment data exactly like cavos-wallet-provider
-      const deploymentData = {
-        class_hash: argentXaccountClassHash,
-        salt: argentXaccountClassHash,
-        unique: "0x0",
-        calldata: ArgentAAConstructorCallData.map((x) => {
-          const hex = BigInt(x).toString(16);
-          return `0x${hex}`;
-        }),
-      };
-
-      // Determine AVNU paymaster URL based on network
-      const currentNetwork = this.network.getCurrentNetwork();
-      const avnuPaymasterUrl = currentNetwork === 'SN_SEPOLIA'
-        ? "https://sepolia.api.avnu.fi"
-        : "https://starknet.api.avnu.fi";
-
-      // Step 1: Build typed data exactly like cavos-wallet-provider
-      if (this.config.enableLogging) {
-        console.log("Sending request to build typed data...");
-      }
-
-      const typeDataResponse = await fetch(
-        `${avnuPaymasterUrl}/paymaster/v1/build-typed-data`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "api-key": this.config.paymasterApiKey || "",
-          },
-          body: JSON.stringify({
-            userAddress: AXcontractAddress,
-            accountClassHash: argentXaccountClassHash,
-            deploymentData,
-            calls: [],
-          }),
-        }
-      );
-
-      if (!typeDataResponse.ok) {
-        const errText = await typeDataResponse.text();
-        console.error("Error building typed data:", errText);
-        throw new Error("Failed to build typed data");
-      }
-
-      if (this.config.enableLogging) {
-        console.log("Typed data built successfully");
-      }
-
-      // Step 2: Deploy account exactly like cavos-wallet-provider
-      if (this.config.enableLogging) {
-        console.log("Sending deployment transaction...");
-      }
-
-      const executeResponse = await fetch(
-        `${avnuPaymasterUrl}/paymaster/v1/deploy-account`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "api-key": this.config.paymasterApiKey || "",
-          },
-          body: JSON.stringify({
-            userAddress: AXcontractAddress,
-            deploymentData: deploymentData,
-          }),
-        }
-      );
-
-      if (!executeResponse.ok) {
-        const errorText = await executeResponse.text();
-        console.error("Error executing deployment:", errorText);
-        throw new Error("Failed to execute deployment");
-      }
-
-      const executeResult = await executeResponse.json();
-      if (this.config.enableLogging) {
-        console.log("Deployment response:", executeResult);
-      }
-
-      // Set current account to the newly deployed account
-      this.currentAccount = new Account(provider, AXcontractAddress, privateKey);
-      this.currentPrivateKey = privateKey;
-
-      if (this.config.enableLogging) {
-        console.log("✅ Account deployed successfully via AVNU direct API:", AXcontractAddress);
-      }
-
-    } catch (error) {
-      console.error("Error deploying account via AVNU:", error);
-      throw error;
-    }
+    
+    return privateKey;
   }
 
+
   /**
-   * Connect to an existing account using private key
+   * Connect to an existing account using a private key
+   * @param privateKey The private key to connect with
+   * @param useAVNU Whether to use AVNU account calculation (default: true)
+   * @returns The account address
+   * @throws {Error} If private key is invalid or connection fails
    */
-  async connectAccount(privateKey: string): Promise<string> {
+  async connectAccount(privateKey: string, useAVNU: boolean = true): Promise<string> {
     try {
-      const account = await this.accountManager.connectAccount(privateKey);
+      let account: Account;
+      
+      if (useAVNU) {
+        // Use AVNU account calculation for consistency with deployed accounts
+        account = await this.accountManager.connectAVNUAccount(privateKey);
+      } else {
+        // Use legacy account calculation
+        account = await this.accountManager.connectAccount(privateKey);
+      }
       
       this.currentAccount = account;
       this.currentPrivateKey = privateKey;
@@ -464,27 +127,29 @@ export class AegisSDK {
       this.contractManager.setAccount(account);
       
       if (this.config.enableLogging) {
-        console.log('✅ Account connected:', account.address);
+        console.log(`Account connected: ${account.address}`);
       }
       
       return account.address;
     } catch (error) {
       if (this.config.enableLogging) {
-        console.error('❌ Connect account failed:', error);
+        console.error('Connect account failed:', error);
       }
       throw error;
     }
   }
 
   /**
-   * Get current account address
+   * Get the current connected account address
+   * @returns The account address or null if not connected
    */
   get address(): string | null {
     return this.currentAccount?.address || null;
   }
 
   /**
-   * Check if account is connected
+   * Check if an account is currently connected
+   * @returns True if account is connected, false otherwise
    */
   get isConnected(): boolean {
     return this.currentAccount !== null;
@@ -495,7 +160,13 @@ export class AegisSDK {
   // ===============================
 
   /**
-   * Execute contract calls (main method)
+   * Execute a contract call with gasless transactions
+   * @param contractAddress The contract address to call
+   * @param entrypoint The function name to call
+   * @param calldata Array of parameters for the function
+   * @param options Execution options
+   * @returns Transaction result with hash and status
+   * @throws {Error} If no account is connected or execution fails
    */
   async execute(
     contractAddress: string,
@@ -530,7 +201,11 @@ export class AegisSDK {
   }
 
   /**
-   * Execute multiple contract calls in one transaction
+   * Execute multiple contract calls in a single gasless transaction
+   * @param calls Array of contract calls to execute
+   * @param options Execution options
+   * @returns Transaction result with hash and status
+   * @throws {Error} If no account is connected or execution fails
    */
   async executeBatch(calls: Array<{
     contractAddress: string;
@@ -568,7 +243,12 @@ export class AegisSDK {
   // ===============================
 
   /**
-   * Call contract view function (read-only)
+   * Call a contract view function (read-only, no gas required)
+   * @param contractAddress The contract address to call
+   * @param method The function name to call
+   * @param args Array of parameters for the function
+   * @returns The function result
+   * @throws {Error} If the call fails
    */
   async call(
     contractAddress: string,

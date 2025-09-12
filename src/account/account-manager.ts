@@ -1,4 +1,4 @@
-import { Account } from 'starknet';
+import { Account, ec, hash, CallData, CairoCustomEnum, CairoOption } from 'starknet';
 import { CryptoUtils } from '../core/crypto';
 import { SecureStorage } from '../storage/secure-storage';
 import { NetworkManager } from '../network/network-manager';
@@ -263,5 +263,150 @@ export class AccountManager {
     } catch (error) {
       return false;
     }
+  }
+
+  /**
+   * Calculate account address using AVNU's ArgentX deployment method
+   * @param privateKey The private key to calculate address for
+   * @returns The calculated contract address
+   */
+  generateAVNUAccountAddress(privateKey: string): string {
+    const argentXAccountClassHash = "0x036078334509b514626504edc9fb252328d1a240e4e948bef8d0c08dff45927f";
+    const starkKeyPub = ec.starkCurve.getStarkKey(privateKey);
+
+    const signer = new CairoCustomEnum({
+      Starknet: { pubkey: starkKeyPub },
+    });
+    const guardian = new CairoOption(1);
+    const constructorCallData = CallData.compile({
+      owner: signer,
+      guardian: guardian,
+    });
+
+    return hash.calculateContractAddressFromHash(
+      argentXAccountClassHash,
+      argentXAccountClassHash,
+      constructorCallData,
+      0
+    );
+  }
+
+  /**
+   * Deploy account using AVNU gasless deployment
+   * @param privateKey The private key for the account to deploy
+   * @param apiKey AVNU API key for gasless transactions
+   * @returns The deployed account address
+   * @throws {DeploymentError} If deployment fails
+   */
+  async deployAccountWithAVNU(privateKey: string, apiKey: string): Promise<string> {
+    if (!CryptoUtils.isValidPrivateKey(privateKey)) {
+      throw new ValidationError('Invalid private key provided');
+    }
+
+    if (!apiKey) {
+      throw new DeploymentError("AVNU API key is required for gasless deployment");
+    }
+
+    const argentXAccountClassHash = "0x036078334509b514626504edc9fb252328d1a240e4e948bef8d0c08dff45927f";
+    const starkKeyPub = ec.starkCurve.getStarkKey(privateKey);
+
+    // Create constructor calldata
+    const signer = new CairoCustomEnum({
+      Starknet: { pubkey: starkKeyPub },
+    });
+    const guardian = new CairoOption(1);
+    const constructorCallData = CallData.compile({
+      owner: signer,
+      guardian: guardian,
+    });
+
+    // Calculate contract address
+    const contractAddress = hash.calculateContractAddressFromHash(
+      argentXAccountClassHash,
+      argentXAccountClassHash,
+      constructorCallData,
+      0
+    );
+
+    // Prepare deployment data
+    const deploymentData = {
+      class_hash: argentXAccountClassHash,
+      salt: argentXAccountClassHash,
+      unique: "0x0",
+      calldata: constructorCallData.map((x) => `0x${BigInt(x).toString(16)}`),
+    };
+
+    // Determine AVNU API URL
+    const currentNetwork = this.network.getCurrentNetwork();
+    const baseUrl = currentNetwork === 'SN_SEPOLIA'
+      ? "https://sepolia.api.avnu.fi"
+      : "https://starknet.api.avnu.fi";
+
+    try {
+      // Step 1: Build typed data
+      const typeDataResponse = await fetch(`${baseUrl}/paymaster/v1/build-typed-data`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "api-key": apiKey,
+        },
+        body: JSON.stringify({
+          userAddress: contractAddress,
+          accountClassHash: argentXAccountClassHash,
+          deploymentData,
+          calls: [],
+        }),
+      });
+
+      if (!typeDataResponse.ok) {
+        const errorText = await typeDataResponse.text();
+        throw new DeploymentError(`Failed to build typed data: ${errorText}`);
+      }
+
+      // Step 2: Execute deployment
+      const executeResponse = await fetch(`${baseUrl}/paymaster/v1/deploy-account`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "api-key": apiKey,
+        },
+        body: JSON.stringify({
+          userAddress: contractAddress,
+          deploymentData: deploymentData,
+        }),
+      });
+
+      if (!executeResponse.ok) {
+        const errorText = await executeResponse.text();
+        throw new DeploymentError(`Failed to execute deployment: ${errorText}`);
+      }
+
+      const result = await executeResponse.json();
+      console.log(`Account deployed with transaction: ${result.transactionHash}`);
+
+      return contractAddress;
+    } catch (error) {
+      if (error instanceof DeploymentError) {
+        throw error;
+      }
+      throw new DeploymentError(`AVNU deployment failed: ${error}`);
+    }
+  }
+
+  /**
+   * Connect to an AVNU deployed account
+   * @param privateKey The private key for the account
+   * @returns Connected Account instance
+   */
+  async connectAVNUAccount(privateKey: string): Promise<Account> {
+    if (!CryptoUtils.isValidPrivateKey(privateKey)) {
+      throw new ValidationError('Invalid private key provided');
+    }
+
+    const provider = this.network.getProvider();
+    const address = this.generateAVNUAccountAddress(privateKey);
+    
+    this.currentAccount = new Account(provider, address, privateKey);
+    return this.currentAccount;
   }
 }
