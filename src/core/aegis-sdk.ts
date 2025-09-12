@@ -133,8 +133,13 @@ export class AegisSDK {
         return;
       }
 
-      // Get deployment data
-      const deploymentData = this.accountManager.getDeploymentData(privateKey);
+      // Get deployment data in the format AVNU SDK expects
+      const deploymentData = {
+        classHash: CryptoUtils.getAccountClassHash('argentX'),
+        constructorCalldata: CryptoUtils.getConstructorCalldata(privateKey, 'argentX'),
+        addressSalt: CryptoUtils.getPublicKey(privateKey),
+        contractAddress: account.address,
+      };
       
       // Use empty calls array for deployment-only transaction
       const calls: any[] = [];
