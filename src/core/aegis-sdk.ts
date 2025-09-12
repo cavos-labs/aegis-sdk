@@ -31,8 +31,6 @@ export class AegisSDK {
   private balanceManager: BalanceManager;
   private trackingManager: TrackingManager;
   
-  private currentAccount: Account | null = null;
-  private currentPrivateKey: string | null = null;
   
   public readonly config: WalletConfig;
 
@@ -82,6 +80,13 @@ export class AegisSDK {
         enabled: trackingConfig.enabled
       });
     }
+
+    // Try to load existing account for this app
+    this.loadExistingAccount().catch(error => {
+      if (config.enableLogging) {
+        console.debug('No existing account found or failed to load:', error.message);
+      }
+    });
   }
 
   // ===============================
@@ -108,12 +113,11 @@ export class AegisSDK {
     // Deploy using AccountManager's AVNU deployment
     await this.accountManager.deployAccountWithAVNU(privateKey, this.config.paymasterApiKey);
     
-    // Connect to the deployed account
+    // Connect and store the deployed account
     const account = await this.accountManager.connectAVNUAccount(privateKey);
     
-    // Set as current account
-    this.currentAccount = account;
-    this.currentPrivateKey = privateKey;
+    // Store the account for persistence
+    await this.accountManager.storeAccount(privateKey, this.config.appName, 'argentX');
     
     // Update managers
     this.transactionManager.setAccount(account);
@@ -149,8 +153,8 @@ export class AegisSDK {
         account = await this.accountManager.connectAccount(privateKey);
       }
       
-      this.currentAccount = account;
-      this.currentPrivateKey = privateKey;
+      // Store the account for persistence
+      await this.accountManager.storeAccount(privateKey, this.config.appName, 'argentX');
       
       // Update managers
       this.transactionManager.setAccount(account);
@@ -174,7 +178,7 @@ export class AegisSDK {
    * @returns The account address or null if not connected
    */
   get address(): string | null {
-    return this.currentAccount?.address || null;
+    return this.accountManager.getCurrentAddress();
   }
 
   /**
@@ -182,7 +186,7 @@ export class AegisSDK {
    * @returns True if account is connected, false otherwise
    */
   get isConnected(): boolean {
-    return this.currentAccount !== null;
+    return this.accountManager.getCurrentAccount() !== null;
   }
 
   // ===============================
@@ -204,7 +208,7 @@ export class AegisSDK {
     calldata: any[] = [],
     options: ExecutionOptions = {}
   ): Promise<TransactionResult> {
-    if (!this.currentAccount) {
+    if (!this.accountManager.getCurrentAccount()) {
       throw new Error('No account connected. Call deployAccount() or connectAccount() first.');
     }
 
@@ -245,7 +249,7 @@ export class AegisSDK {
     entrypoint: string;
     calldata: any[];
   }>, options: ExecutionOptions = {}): Promise<TransactionResult> {
-    if (!this.currentAccount) {
+    if (!this.accountManager.getCurrentAccount()) {
       throw new Error('No account connected. Call deployAccount() or connectAccount() first.');
     }
 
@@ -446,10 +450,30 @@ export class AegisSDK {
    * Export current private key
    */
   async exportPrivateKey(): Promise<string | null> {
-    if (!this.currentPrivateKey) {
+    const currentAddress = this.accountManager.getCurrentAddress();
+    if (!currentAddress) {
       return null;
     }
-    return this.currentPrivateKey;
+
+    try {
+      // Get all stored accounts for this app
+      const storedAccounts = await this.accountManager.getStoredAccounts(this.config.appName);
+      
+      // Find the storage key for the current address
+      for (const storageKey of storedAccounts) {
+        const metadata = await this.accountManager.getAccountMetadata(storageKey);
+        if (metadata?.address === currentAddress) {
+          return await this.accountManager.exportPrivateKey(storageKey);
+        }
+      }
+      
+      return null;
+    } catch (error) {
+      if (this.config.enableLogging) {
+        console.error('❌ Export private key failed:', error);
+      }
+      return null;
+    }
   }
 
   /**
@@ -475,8 +499,6 @@ export class AegisSDK {
    * Disconnect account
    */
   disconnect(): void {
-    this.currentAccount = null;
-    this.currentPrivateKey = null;
     this.accountManager.disconnectAccount();
     this.transactionManager.setAccount(null);
     this.contractManager.setAccount(null);
@@ -619,6 +641,33 @@ export class AegisSDK {
         return 'sepolia'; // Map devnet to sepolia for tracking
       default:
         return 'sepolia';
+    }
+  }
+
+  /**
+   * Try to load an existing account for this app
+   * @private
+   */
+  private async loadExistingAccount(): Promise<void> {
+    try {
+      const storedAccounts = await this.accountManager.getStoredAccounts(this.config.appName);
+      
+      if (storedAccounts.length > 0) {
+        // Load the first account found (most recent)
+        const storageKey = storedAccounts[0];
+        const account = await this.accountManager.connectStoredAccount(storageKey);
+        
+        // Update managers
+        this.transactionManager.setAccount(account);
+        this.contractManager.setAccount(account);
+        
+        if (this.config.enableLogging) {
+          console.log(`🔄 Loaded existing account: ${account.address}`);
+        }
+      }
+    } catch (error) {
+      // Silent failure - no existing account or connection failed
+      throw new Error(`Failed to load existing account: ${error}`);
     }
   }
 }
