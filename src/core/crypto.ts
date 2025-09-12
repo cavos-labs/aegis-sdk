@@ -107,11 +107,8 @@ export class CryptoUtils {
     
     switch (accountType) {
       case 'argentX':
-        return CallData.compile({
-          implementation: '0x01a736d6ed154502257f02b1ccdf4d9d1089f80811cd6acad48e6b6a9d1f2003',
-          selector: '0x79dc0da7c54b95f10aa182ad0a46400db63156920adb65eca2654c0945a463',
-          calldata: [publicKey, '0x0']
-        });
+        // ArgentX constructor expects: (owner: felt252, guardian: felt252)
+        return CallData.compile([publicKey, '0x0']);
       case 'braavos':
         return CallData.compile({ public_key: publicKey });
       case 'devnet':
