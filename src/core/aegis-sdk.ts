@@ -282,7 +282,7 @@ export class AegisSDK {
   }
 
   /**
-   * Deploy account using POW's exact paymaster approach from invokeWithPaymaster
+   * Deploy account using UDC with an existing funded account via paymaster
    */
   private async deployAccountUsingPOWPaymaster(privateKey: string, accountClassName?: string): Promise<void> {
     const provider = this.network.getProvider();
@@ -292,39 +292,67 @@ export class AegisSDK {
       return;
     }
 
-    // POW's exact paymaster deployment logic
-    const deploymentData = this.getDeploymentData(privateKey, accountClassName);
+    // Use the existing funded account to deploy new accounts
+    const DEPLOYER_ADDRESS = '0x06f58A6581F348180A4A8EF0f6a2168cef1a53874A3ec1980D35FFB9b4227948';
+    const DEPLOYER_PK = '0x058295e9af8fd50ed9175e597b1d7b18d09e41d62c7f8e0987abeebbd6ab41ae';
     
-    // Create account instance like POW does
-    const invokeAccount = new Account(
-      provider,
-      this.generateAccountAddress(privateKey, accountClassName),
-      privateKey,
+    const deployerAccount = new Account(provider, DEPLOYER_ADDRESS, DEPLOYER_PK);
+
+    // Calculate new account details
+    const publicKey = ec.starkCurve.getStarkKey(privateKey);
+    const contractClassHash = this.getAccountClassHash(accountClassName);
+    const constructor = CallData.compile([publicKey, "0x0"]); // [owner, guardian]
+    
+    // Use random salt for unique addresses
+    const salt = ec.starkCurve.getStarkKey(privateKey); // Use new account's public key as salt
+    
+    // Calculate the address where new account will be deployed
+    const newAccountAddress = hash.calculateContractAddressFromHash(
+      salt,
+      contractClassHash,
+      constructor,
+      0
     );
 
     if (this.config.enableLogging) {
-      console.log('🔧 POW paymaster deployment data:', deploymentData);
+      console.log('🔧 UDC deployment via existing account:', {
+        deployerAccount: DEPLOYER_ADDRESS,
+        newAccountAddress,
+        classHash: contractClassHash,
+        constructor,
+        salt
+      });
     }
 
-    // Use empty calls array for deployment-only transaction (like POW)
-    const calls: Call[] = [];
-    
-    // Execute exactly like POW's invokeWithPaymaster
+    // Create UDC deployment call
+    const UDC_ADDRESS = '0x041a78e741e5af2fec34b695679bc6891742439f7afb8484ecd7766661ad02bf';
+    const deployCall: Call = {
+      contractAddress: UDC_ADDRESS,
+      entrypoint: 'deployContract',
+      calldata: CallData.compile({
+        classHash: contractClassHash,
+        salt: salt,
+        unique: "0",
+        calldata: constructor,
+      }),
+    };
+
+    // Execute UDC call using the funded account via paymaster
     const result = await this.paymaster.execute(
-      invokeAccount,
-      calls,
-      deploymentData
+      deployerAccount,
+      [deployCall]
     );
     
     if (this.config.enableLogging) {
-      console.log('✅ Account deployed with POW paymaster approach:', result.transactionHash);
+      console.log('✅ Account deployed via UDC + paymaster:', result.transactionHash);
+      console.log('🏠 New account address:', newAccountAddress);
     }
     
     // Wait for deployment
     await this.waitForTransaction(result.transactionHash);
     
-    // Set current account
-    this.currentAccount = invokeAccount;
+    // Set current account to the newly deployed account
+    this.currentAccount = new Account(provider, newAccountAddress, privateKey);
     this.currentPrivateKey = privateKey;
   }
 
