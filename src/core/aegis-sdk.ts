@@ -86,8 +86,8 @@ export class AegisSDK {
         console.log('🔗 Connected to account:', account.address);
       }
       
-      // Deploy the account exactly like POW does
-      await this.deployAccountExactlyLikePOW(privateKey);
+      // Deploy the account using POW's paymaster approach
+      await this.deployAccountUsingPOWPaymaster(privateKey);
       
       // Store the account
       await this.accountManager.storeKeyAndConnect(privateKey, this.config.appName);
@@ -243,6 +243,88 @@ export class AegisSDK {
     
     // Connect to the newly deployed account
     this.currentAccount = new Account(provider, contract_address, privateKey);
+    this.currentPrivateKey = privateKey;
+  }
+
+  /**
+   * POW's exact deployment data function
+   */
+  private getDeploymentData(privateKey: string, accountClassName?: string) {
+    const deploymentData = {
+      class_hash: this.getAccountClassHash(accountClassName),
+      calldata: this.getDeployCalldataHex(privateKey, accountClassName),
+      salt: ec.starkCurve.getStarkKey(privateKey),
+      unique: "0x0",
+    };
+    return deploymentData;
+  }
+
+  /**
+   * POW's exact deploy calldata hex function
+   */
+  private getDeployCalldataHex(privateKey: string, accountClassName?: string) {
+    // Default to Argent X account class calldata
+    if (!accountClassName) {
+      const starkKeyPub = ec.starkCurve.getStarkKey(privateKey);
+      return [starkKeyPub, "0x0"];
+    }
+    if (accountClassName === "argentX") {
+      const starkKeyPub = ec.starkCurve.getStarkKey(privateKey);
+      return [starkKeyPub, "0x0"];
+    } else if (accountClassName === "devnet") {
+      const starkKeyPub = ec.starkCurve.getStarkKey(privateKey);
+      return [starkKeyPub];
+    } else {
+      if (this.config.enableLogging)
+        console.error(`Unsupported account class: ${accountClassName}`);
+      return [];
+    }
+  }
+
+  /**
+   * Deploy account using POW's exact paymaster approach from invokeWithPaymaster
+   */
+  private async deployAccountUsingPOWPaymaster(privateKey: string, accountClassName?: string): Promise<void> {
+    const provider = this.network.getProvider();
+    
+    if (!provider) {
+      console.error("Provider is not initialized.");
+      return;
+    }
+
+    // POW's exact paymaster deployment logic
+    const deploymentData = this.getDeploymentData(privateKey, accountClassName);
+    
+    // Create account instance like POW does
+    const invokeAccount = new Account(
+      provider,
+      this.generateAccountAddress(privateKey, accountClassName),
+      privateKey,
+    );
+
+    if (this.config.enableLogging) {
+      console.log('🔧 POW paymaster deployment data:', deploymentData);
+    }
+
+    // Use empty calls array for deployment-only transaction (like POW)
+    const calls: Call[] = [];
+    
+    // Execute exactly like POW's invokeWithPaymaster
+    const result = await this.paymaster.execute(
+      invokeAccount,
+      calls,
+      deploymentData
+    );
+    
+    if (this.config.enableLogging) {
+      console.log('✅ Account deployed with POW paymaster approach:', result.transactionHash);
+    }
+    
+    // Wait for deployment
+    await this.waitForTransaction(result.transactionHash);
+    
+    // Set current account
+    this.currentAccount = invokeAccount;
     this.currentPrivateKey = privateKey;
   }
 
