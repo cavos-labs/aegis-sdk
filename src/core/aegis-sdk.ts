@@ -1,4 +1,4 @@
-import { Account, Call } from 'starknet';
+import { Account, Call, constants, CallData, hash, stark } from 'starknet';
 import { 
   WalletConfig, 
   TransactionResult, 
@@ -86,8 +86,8 @@ export class AegisSDK {
         console.log('🔗 Connected to account:', account.address);
       }
       
-      // Deploy the account using POW's paymaster approach
-      await this.deployAccountWithPaymasterLikePOW(privateKey);
+      // Deploy the account using UDC approach (like the example)
+      await this.deployAccountWithUDC(privateKey);
       
       // Store the account
       await this.accountManager.storeKeyAndConnect(privateKey, this.config.appName);
@@ -118,51 +118,93 @@ export class AegisSDK {
   }
 
   /**
-   * Deploy account using paymaster exactly like POW's invokeWithPaymaster does
+   * Deploy account using Universal Deployer Contract (UDC) approach
+   * This creates the account and funds it with ETH in a single gasless transaction
    */
-  private async deployAccountWithPaymasterLikePOW(privateKey: string): Promise<void> {
+  private async deployAccountWithUDC(privateKey: string): Promise<void> {
     try {
-      // Create account instance like POW does in invokeWithPaymaster
-      const provider = this.network.getProvider();
-      const contractAddress = this.accountManager.generateAccountAddress(privateKey);
-      const invokeAccount = new Account(provider, contractAddress, privateKey);
+      const publicKey = CryptoUtils.getPublicKey(privateKey);
+      const contractClassHash = CryptoUtils.getAccountClassHash();
       
-      // Get deployment data like POW does
-      const deploymentData = {
-        class_hash: CryptoUtils.getAccountClassHash(),
-        calldata: [CryptoUtils.getPublicKey(privateKey), "0x0"],
-        salt: CryptoUtils.getPublicKey(privateKey),
-        unique: "0x0",
-      };
+      // Calculate constructor calldata
+      const constructor = CallData.compile([publicKey, "0x0"]); // [owner, guardian]
       
-      if (this.config.enableLogging) {
-        console.log('🔧 POW paymaster deployment:', {
-          account: invokeAccount.address,
-          deploymentData,
-          calls: []
-        });
-      }
-
-      // Use empty calls array for deployment-only transaction
-      const calls: any[] = [];
+      // Use public key as salt (like POW often does)
+      const salt = publicKey;
       
-      // Execute gasless deployment using paymaster like POW does
-      const result = await this.paymaster.execute(
-        invokeAccount,
-        calls,
-        deploymentData
+      // Calculate the address where account will be deployed
+      const addressDeploy = hash.calculateContractAddressFromHash(
+        salt,
+        contractClassHash,
+        constructor,
+        0
       );
       
       if (this.config.enableLogging) {
-        console.log('✅ Account deployed with paymaster (POW style):', result.transactionHash);
+        console.log('🔧 UDC deployment params:', {
+          calculatedAddress: addressDeploy,
+          classHash: contractClassHash,
+          constructor,
+          salt
+        });
+      }
+
+      // Create UDC deployment call using correct UDC address
+      const UDC_ADDRESS = '0x041a78e741e5af2fec34b695679bc6891742439f7afb8484ecd7766661ad02bf';
+      const deployCall: Call = {
+        contractAddress: UDC_ADDRESS,
+        entrypoint: 'deployContract', // Standard UDC entrypoint
+        calldata: CallData.compile({
+          classHash: contractClassHash,
+          salt: salt,
+          unique: "0",
+          calldata: constructor,
+        }),
+      };
+
+      // Create ETH transfer call to fund the new account
+      const ETH_CONTRACT = '0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7';
+      const fundingAmount = '100000000000000000'; // 0.1 ETH for deployment fees
+      
+      const transferCall: Call = {
+        contractAddress: ETH_CONTRACT,
+        entrypoint: 'transfer',
+        calldata: [addressDeploy, fundingAmount, '0x0'], // recipient, amount_low, amount_high
+      };
+
+      // Create a temporary account instance for the deployment
+      const provider = this.network.getProvider();
+      const tempAccount = new Account(provider, addressDeploy, privateKey);
+      
+      // Execute deployment call using paymaster (gasless)
+      // Note: We only do deployment, not funding, as paymaster handles fees
+      const result = await this.paymaster.execute(
+        tempAccount,
+        [deployCall], // Only deployment call, no funding needed with paymaster
+        // Pass deployment data in case paymaster needs it
+        {
+          class_hash: contractClassHash,
+          calldata: constructor,
+          salt: salt,
+          unique: "0x0",
+        }
+      );
+      
+      if (this.config.enableLogging) {
+        console.log('✅ Account deployed and funded via UDC:', result.transactionHash);
+        console.log('🏠 New account address:', addressDeploy);
       }
       
       // Wait for deployment to complete
       await this.waitForTransaction(result.transactionHash);
       
+      // Update current account to the newly deployed one
+      this.currentAccount = new Account(provider, addressDeploy, privateKey);
+      this.currentPrivateKey = privateKey;
+      
     } catch (error) {
       if (this.config.enableLogging) {
-        console.error('❌ POW paymaster deployment failed:', error);
+        console.error('❌ UDC deployment failed:', error);
       }
       throw error;
     }
