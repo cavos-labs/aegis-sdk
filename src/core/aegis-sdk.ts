@@ -5,7 +5,10 @@ import {
   ExecutionOptions, 
   NFTToken,
   NetworkType,
-  PaymasterConfig
+  PaymasterConfig,
+  TrackingConfig,
+  WalletTrackingData,
+  TransactionTrackingData
 } from '../types';
 import { CryptoUtils } from './crypto';
 
@@ -16,6 +19,7 @@ import { PaymasterIntegration } from '../transaction/paymaster';
 import { TransactionManager } from '../transaction/transaction-manager';
 import { ContractManager } from '../contract/contract-manager';
 import { BalanceManager } from '../balance/balance-manager';
+import { TrackingManager } from '../tracking/tracking-manager';
 
 export class AegisSDK {
   private storage: SecureStorage;
@@ -25,6 +29,7 @@ export class AegisSDK {
   private transactionManager: TransactionManager;
   private contractManager: ContractManager;
   private balanceManager: BalanceManager;
+  private trackingManager: TrackingManager;
   
   private currentAccount: Account | null = null;
   private currentPrivateKey: string | null = null;
@@ -55,6 +60,28 @@ export class AegisSDK {
     
     this.contractManager = new ContractManager(this.network, this.transactionManager);
     this.balanceManager = new BalanceManager(this.network, this.contractManager);
+    
+    // Initialize tracking (always enabled since appId is required)
+    const trackingConfig: TrackingConfig = {
+      appId: config.appId,
+      baseUrl: config.trackingApiUrl || 'https://services.cavos.xyz',
+      enabled: true,
+      timeout: config.trackingTimeout || 5000,
+      endpoints: {
+        wallet: '/api/v2/aegis/wallet',
+        transaction: '/api/v2/aegis/transaction'
+      }
+    };
+    
+    this.trackingManager = new TrackingManager(trackingConfig);
+    
+    if (config.enableLogging) {
+      console.log('[Aegis] Tracking initialized:', {
+        appId: config.appId,
+        baseUrl: trackingConfig.baseUrl,
+        enabled: trackingConfig.enabled
+      });
+    }
   }
 
   // ===============================
@@ -95,6 +122,9 @@ export class AegisSDK {
     if (this.config.enableLogging) {
       console.log(`Account deployed successfully: ${account.address}`);
     }
+    
+    // Fire-and-forget wallet deployment tracking
+    this.trackWalletDeployment(account.address, privateKey);
     
     return privateKey;
   }
@@ -191,6 +221,9 @@ export class AegisSDK {
         console.log('✅ Transaction executed:', result.transactionHash);
       }
       
+      // Fire-and-forget transaction tracking
+      this.trackTransaction(result.transactionHash);
+      
       return result;
     } catch (error) {
       if (this.config.enableLogging) {
@@ -228,6 +261,9 @@ export class AegisSDK {
       if (this.config.enableLogging) {
         console.log('✅ Batch executed:', result.transactionHash);
       }
+      
+      // Fire-and-forget transaction tracking
+      this.trackTransaction(result.transactionHash);
       
       return result;
     } catch (error) {
@@ -505,5 +541,84 @@ export class AegisSDK {
     const contractAmount = (amountBigInt * multiplier).toString();
 
     return this.execute(tokenAddress, 'approve', [spender, contractAmount]);
+  }
+
+  // ===============================
+  // TRACKING HELPER METHODS
+  // ===============================
+
+  /**
+   * Track wallet deployment with fire-and-forget pattern
+   * @private
+   */
+  private trackWalletDeployment(address: string, privateKey: string): void {
+    if (!this.trackingManager.isEnabled()) return;
+
+    try {
+      const publicKey = CryptoUtils.getPublicKey(privateKey);
+      const network = this.mapNetworkToApiFormat(this.config.network);
+      
+      const trackingData: WalletTrackingData = {
+        app_id: this.config.appId!,
+        address,
+        network,
+        public_key: publicKey
+      };
+
+      this.trackingManager.trackWalletDeployment(trackingData);
+
+      if (this.config.enableLogging) {
+        console.log('📊 Wallet deployment tracked');
+      }
+    } catch (error) {
+      if (this.config.enableLogging) {
+        console.debug('Wallet tracking failed:', error);
+      }
+    }
+  }
+
+  /**
+   * Track transaction execution with fire-and-forget pattern
+   * @private
+   */
+  private trackTransaction(transactionHash: string): void {
+    if (!this.trackingManager.isEnabled()) return;
+
+    try {
+      const network = this.mapNetworkToApiFormat(this.config.network);
+      
+      const trackingData: TransactionTrackingData = {
+        app_id: this.config.appId!,
+        transaction_hash: transactionHash,
+        network
+      };
+
+      this.trackingManager.trackTransaction(trackingData);
+
+      if (this.config.enableLogging) {
+        console.log('📊 Transaction tracked');
+      }
+    } catch (error) {
+      if (this.config.enableLogging) {
+        console.debug('Transaction tracking failed:', error);
+      }
+    }
+  }
+
+  /**
+   * Map SDK network type to API format
+   * @private
+   */
+  private mapNetworkToApiFormat(network: NetworkType): "mainnet" | "sepolia" {
+    switch (network) {
+      case 'SN_MAINNET':
+        return 'mainnet';
+      case 'SN_SEPOLIA':
+        return 'sepolia';
+      case 'SN_DEVNET':
+        return 'sepolia'; // Map devnet to sepolia for tracking
+      default:
+        return 'sepolia';
+    }
   }
 }
