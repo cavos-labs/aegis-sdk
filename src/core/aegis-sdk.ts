@@ -126,11 +126,11 @@ export class AegisSDK {
       const publicKey = CryptoUtils.getPublicKey(privateKey);
       const contractClassHash = CryptoUtils.getAccountClassHash();
       
-      // Calculate constructor calldata
-      const constructor = CallData.compile([publicKey, "0x0"]); // [owner, guardian]
+      // Use stark.randomAddress() for salt like in the example
+      const salt = stark.randomAddress();
       
-      // Use public key as salt (like POW often does)
-      const salt = publicKey;
+      // Calculate constructor calldata exactly like the example
+      const constructor = CallData.compile([publicKey, "0x0"]); // [owner, guardian]
       
       // Calculate the address where account will be deployed
       const addressDeploy = hash.calculateContractAddressFromHash(
@@ -149,11 +149,11 @@ export class AegisSDK {
         });
       }
 
-      // Create UDC deployment call using correct UDC address
+      // Create UDC deployment call exactly like the example
       const UDC_ADDRESS = '0x041a78e741e5af2fec34b695679bc6891742439f7afb8484ecd7766661ad02bf';
       const deployCall: Call = {
         contractAddress: UDC_ADDRESS,
-        entrypoint: 'deployContract', // Standard UDC entrypoint
+        entrypoint: 'deployContract',
         calldata: CallData.compile({
           classHash: contractClassHash,
           salt: salt,
@@ -176,18 +176,11 @@ export class AegisSDK {
       const provider = this.network.getProvider();
       const tempAccount = new Account(provider, addressDeploy, privateKey);
       
-      // Execute deployment call using paymaster (gasless)
-      // Note: We only do deployment, not funding, as paymaster handles fees
+      // Execute just the UDC deployment call using paymaster (gasless)
+      // No deployment data needed since UDC handles the deployment
       const result = await this.paymaster.execute(
         tempAccount,
-        [deployCall], // Only deployment call, no funding needed with paymaster
-        // Pass deployment data in case paymaster needs it
-        {
-          class_hash: contractClassHash,
-          calldata: constructor,
-          salt: salt,
-          unique: "0x0",
-        }
+        [deployCall] // Just the UDC call, no extra deployment data
       );
       
       if (this.config.enableLogging) {
