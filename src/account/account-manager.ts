@@ -145,10 +145,7 @@ export class AccountManager {
           addressSalt: starkKeyPub,
           contractAddress: contractAddress,
         },
-        { 
-          maxFee: 100_000_000_000_000,
-          version: 3
-         } // Same maxFee as POW uses
+        { maxFee: 100_000_000_000_000 } // Same maxFee as POW uses, no version specified = V1
       ).catch((error) => {
         // Handle already deployed case like POW does
         if (error instanceof Error && error.message.includes('already deployed')) {
