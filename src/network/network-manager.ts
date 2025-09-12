@@ -22,16 +22,16 @@ export class NetworkManager {
     return {
       SN_MAINNET: {
         rpcUrl: process.env.EXPO_PUBLIC_MAINNET_RPC_URL || 
-                'https://starknet-mainnet.public.blastapi.io/rpc/v0_7',
+                'https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_8/dql5pMT88iueZWl7L0yzT56uVk0EBU4L',
         chainId: constants.StarknetChainId.SN_MAIN,
-        specVersion: '0.7.1',
+        specVersion: '0.8.1',
         blockExplorer: 'https://starkscan.co',
       },
       SN_SEPOLIA: {
         rpcUrl: process.env.EXPO_PUBLIC_SEPOLIA_RPC_URL || 
-                'https://starknet-sepolia.public.blastapi.io/rpc/v0_7',
+                'https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_8/dql5pMT88iueZWl7L0yzT56uVk0EBU4L',
         chainId: constants.StarknetChainId.SN_SEPOLIA,
-        specVersion: '0.7.1',
+        specVersion: '0.8.1',
         blockExplorer: 'https://sepolia.starkscan.co',
         faucetUrl: 'https://starknet-faucet.vercel.app',
       },
