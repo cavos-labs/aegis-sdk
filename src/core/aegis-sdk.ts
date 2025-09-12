@@ -86,8 +86,8 @@ export class AegisSDK {
         console.log('🔗 Connected to account:', account.address);
       }
       
-      // Deploy the account using paymaster (gasless)
-      await this.deployAccountWithPaymaster(privateKey);
+      // Deploy the account using POW's exact method
+      await this.deployAccountLikePOW(privateKey);
       
       // Store the account
       await this.accountManager.storeKeyAndConnect(privateKey, this.config.appName);
@@ -118,50 +118,58 @@ export class AegisSDK {
   }
 
   /**
-   * Deploy account using paymaster (gasless)
+   * Deploy account exactly like POW project does
    */
-  private async deployAccountWithPaymaster(privateKey: string): Promise<void> {
+  private async deployAccountLikePOW(privateKey: string): Promise<void> {
     try {
-      // Check if account is already deployed
-      const account = await this.accountManager.connectAccount(privateKey);
-      const isDeployed = await this.accountManager.isAccountDeployed(account.address);
+      const provider = this.network.getProvider();
       
-      if (isDeployed) {
+      // POW's exact deployment logic
+      const starkKeyPub = CryptoUtils.getPublicKey(privateKey);
+      const contractAddress = this.accountManager.generateAccountAddress(privateKey);
+      const constructorCalldata = CryptoUtils.getConstructorCalldata(privateKey);
+
+      const accountInstance = new Account(
+        provider,
+        contractAddress,
+        privateKey,
+      );
+      
+      const { transaction_hash, contract_address } = await accountInstance
+        .deployAccount(
+          {
+            classHash: CryptoUtils.getAccountClassHash(),
+            constructorCalldata: constructorCalldata,
+            addressSalt: starkKeyPub,
+            contractAddress: contractAddress,
+          },
+          { maxFee: 100_000_000_000_000 },
+        )
+        .catch((error) => {
+          // POW's exact error handling - assume already deployed
+          return {
+            transaction_hash: "Account already exists",
+            contract_address: contractAddress,
+          };
+        });
+        
+      if (transaction_hash === "Account already exists") {
         if (this.config.enableLogging) {
           console.log('Account already deployed, skipping deployment');
         }
         return;
       }
-
-      // Use raw hex calldata format like POW does
-      const publicKey = CryptoUtils.getPublicKey(privateKey);
-      const deploymentData = {
-        class_hash: CryptoUtils.getAccountClassHash('argentX'),
-        calldata: [publicKey, "0x0"], // Raw hex format: [owner, guardian]
-        salt: publicKey,
-        unique: "0x0",
-      };
-      
-      // Use empty calls array for deployment-only transaction
-      const calls: any[] = [];
-      
-      // Execute gasless deployment using paymaster
-      const result = await this.paymaster.execute(
-        account,
-        calls,
-        deploymentData
-      );
-      
-      if (this.config.enableLogging) {
-        console.log('✅ Account deployed with paymaster:', result.transactionHash);
-      }
       
       // Wait for deployment to complete
-      await this.waitForTransaction(result.transactionHash);
+      await provider.waitForTransaction(transaction_hash);
+      
+      if (this.config.enableLogging) {
+        console.log("✅ New account created. address =", contract_address);
+      }
       
     } catch (error) {
       if (this.config.enableLogging) {
-        console.error('❌ Gasless deployment failed:', error);
+        console.error('❌ POW-style deployment failed:', error);
       }
       throw error;
     }
