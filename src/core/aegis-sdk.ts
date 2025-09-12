@@ -1,4 +1,4 @@
-import { Account, Call, CallData, hash, ec } from 'starknet';
+import { Account, Call, CallData, hash, ec, CairoCustomEnum, CairoOption } from 'starknet';
 import { 
   WalletConfig, 
   TransactionResult, 
@@ -282,7 +282,7 @@ export class AegisSDK {
   }
 
   /**
-   * Deploy account using UDC with an existing funded account via paymaster
+   * Deploy account using AVNU direct API endpoints exactly like cavos-wallet-provider
    */
   private async deployAccountUsingPOWPaymaster(privateKey: string, accountClassName?: string): Promise<void> {
     const provider = this.network.getProvider();
@@ -292,68 +292,133 @@ export class AegisSDK {
       return;
     }
 
-    // Use the existing funded account to deploy new accounts
-    const DEPLOYER_ADDRESS = '0x06f58A6581F348180A4A8EF0f6a2168cef1a53874A3ec1980D35FFB9b4227948';
-    const DEPLOYER_PK = '0x058295e9af8fd50ed9175e597b1d7b18d09e41d62c7f8e0987abeebbd6ab41ae';
-    
-    const deployerAccount = new Account(provider, DEPLOYER_ADDRESS, DEPLOYER_PK);
+    try {
+      if (this.config.enableLogging) {
+        console.log("Generating new ArgentX wallet...");
+      }
 
-    // Calculate new account details
-    const publicKey = ec.starkCurve.getStarkKey(privateKey);
-    const contractClassHash = this.getAccountClassHash(accountClassName);
-    const constructor = CallData.compile([publicKey, "0x0"]); // [owner, guardian]
-    
-    // Use random salt for unique addresses
-    const salt = ec.starkCurve.getStarkKey(privateKey); // Use new account's public key as salt
-    
-    // Calculate the address where new account will be deployed
-    const newAccountAddress = hash.calculateContractAddressFromHash(
-      salt,
-      contractClassHash,
-      constructor,
-      0
-    );
+      // Use ArgentX class hash like cavos-wallet-provider
+      const argentXaccountClassHash = "0x036078334509b514626504edc9fb252328d1a240e4e948bef8d0c08dff45927f";
+      const starkKeyPubAX = ec.starkCurve.getStarkKey(privateKey);
 
-    if (this.config.enableLogging) {
-      console.log('🔧 UDC deployment via existing account:', {
-        deployerAccount: DEPLOYER_ADDRESS,
-        newAccountAddress,
-        classHash: contractClassHash,
-        constructor,
-        salt
+      if (this.config.enableLogging) {
+        console.log("Generated stark key:", starkKeyPubAX);
+      }
+
+      // Create constructor calldata exactly like cavos-wallet-provider
+      const axSigner = new CairoCustomEnum({
+        Starknet: { pubkey: starkKeyPubAX },
       });
-    }
+      const axGuardian = new CairoOption(1);
+      const ArgentAAConstructorCallData = CallData.compile({
+        owner: axSigner,
+        guardian: axGuardian,
+      });
 
-    // Create UDC deployment call
-    const UDC_ADDRESS = '0x041a78e741e5af2fec34b695679bc6891742439f7afb8484ecd7766661ad02bf';
-    const deployCall: Call = {
-      contractAddress: UDC_ADDRESS,
-      entrypoint: 'deployContract',
-      calldata: CallData.compile({
-        classHash: contractClassHash,
-        salt: salt,
-        unique: "0",
-        calldata: constructor,
-      }),
-    };
+      // Calculate contract address exactly like cavos-wallet-provider
+      const AXcontractAddress = hash.calculateContractAddressFromHash(
+        argentXaccountClassHash,
+        argentXaccountClassHash,
+        ArgentAAConstructorCallData,
+        0
+      );
 
-    // Execute UDC call using the funded account via paymaster
-    const result = await this.paymaster.execute(
-      deployerAccount,
-      [deployCall]
-    );
-    
-    if (this.config.enableLogging) {
-      console.log('✅ Account deployed via UDC + paymaster:', result.transactionHash);
-      console.log('🏠 New account address:', newAccountAddress);
+      if (this.config.enableLogging) {
+        console.log("Calculated ArgentX contract address:", AXcontractAddress);
+      }
+
+      // Prepare deployment data exactly like cavos-wallet-provider
+      const deploymentData = {
+        class_hash: argentXaccountClassHash,
+        salt: argentXaccountClassHash,
+        unique: "0x0",
+        calldata: ArgentAAConstructorCallData.map((x) => {
+          const hex = BigInt(x).toString(16);
+          return `0x${hex}`;
+        }),
+      };
+
+      // Determine AVNU paymaster URL based on network
+      const currentNetwork = this.network.getCurrentNetwork();
+      const avnuPaymasterUrl = currentNetwork === 'SN_SEPOLIA'
+        ? "https://sepolia.api.avnu.fi"
+        : "https://starknet.api.avnu.fi";
+
+      // Step 1: Build typed data exactly like cavos-wallet-provider
+      if (this.config.enableLogging) {
+        console.log("Sending request to build typed data...");
+      }
+
+      const typeDataResponse = await fetch(
+        `${avnuPaymasterUrl}/paymaster/v1/build-typed-data`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "api-key": this.config.paymasterApiKey || "",
+          },
+          body: JSON.stringify({
+            userAddress: AXcontractAddress,
+            accountClassHash: argentXaccountClassHash,
+            deploymentData,
+            calls: [],
+          }),
+        }
+      );
+
+      if (!typeDataResponse.ok) {
+        const errText = await typeDataResponse.text();
+        console.error("Error building typed data:", errText);
+        throw new Error("Failed to build typed data");
+      }
+
+      if (this.config.enableLogging) {
+        console.log("Typed data built successfully");
+      }
+
+      // Step 2: Deploy account exactly like cavos-wallet-provider
+      if (this.config.enableLogging) {
+        console.log("Sending deployment transaction...");
+      }
+
+      const executeResponse = await fetch(
+        `${avnuPaymasterUrl}/paymaster/v1/deploy-account`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "api-key": this.config.paymasterApiKey || "",
+          },
+          body: JSON.stringify({
+            userAddress: AXcontractAddress,
+            deploymentData: deploymentData,
+          }),
+        }
+      );
+
+      if (!executeResponse.ok) {
+        const errorText = await executeResponse.text();
+        console.error("Error executing deployment:", errorText);
+        throw new Error("Failed to execute deployment");
+      }
+
+      const executeResult = await executeResponse.json();
+      if (this.config.enableLogging) {
+        console.log("Deployment response:", executeResult);
+      }
+
+      // Set current account to the newly deployed account
+      this.currentAccount = new Account(provider, AXcontractAddress, privateKey);
+      this.currentPrivateKey = privateKey;
+
+      if (this.config.enableLogging) {
+        console.log("✅ Account deployed successfully via AVNU direct API:", AXcontractAddress);
+      }
+
+    } catch (error) {
+      console.error("Error deploying account via AVNU:", error);
+      throw error;
     }
-    
-    // Wait for deployment
-    await this.waitForTransaction(result.transactionHash);
-    
-    // Set current account to the newly deployed account
-    this.currentAccount = new Account(provider, newAccountAddress, privateKey);
-    this.currentPrivateKey = privateKey;
   }
 
   /**
