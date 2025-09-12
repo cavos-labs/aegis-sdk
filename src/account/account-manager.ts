@@ -138,7 +138,10 @@ export class AccountManager {
       
       const { transaction_hash } = await this.currentAccount.deployAccount(
         deploymentData,
-        { maxFee: maxFee || '100000000000000' } // 0.0001 ETH default
+        { 
+          maxFee: maxFee || '100000000000000', // 0.0001 ETH default
+          version: 3 // Use V3 transactions
+        }
       );
 
       // Wait for deployment to complete
