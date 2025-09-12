@@ -40,10 +40,19 @@ export class PaymasterIntegration {
         apiKey: this.config.apiKey,
       };
 
+      // Log what we're sending to AVNU
+      const executionOptions = deploymentData ? { deploymentData } : { };
+      console.log('🔧 AVNU SDK execution params:', {
+        account: account.address,
+        calls,
+        executionOptions,
+        options
+      });
+
       const result = await executeCalls(
         account,
         calls,
-        deploymentData ? { deploymentData } : { },
+        executionOptions,
         options
       );
 
