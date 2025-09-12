@@ -1,4 +1,4 @@
-import { Account, Call, constants, CallData, hash, stark } from 'starknet';
+import { Account, Call, CallData, hash, ec } from 'starknet';
 import { 
   WalletConfig, 
   TransactionResult, 
@@ -86,8 +86,8 @@ export class AegisSDK {
         console.log('🔗 Connected to account:', account.address);
       }
       
-      // Deploy the account using UDC approach (like the example)
-      await this.deployAccountWithUDC(privateKey);
+      // Deploy the account exactly like POW does
+      await this.deployAccountExactlyLikePOW(privateKey);
       
       // Store the account
       await this.accountManager.storeKeyAndConnect(privateKey, this.config.appName);
@@ -118,89 +118,132 @@ export class AegisSDK {
   }
 
   /**
-   * Deploy account using Universal Deployer Contract (UDC) approach
-   * This creates the account and funds it with ETH in a single gasless transaction
+   * POW's exact account class hash function
    */
-  private async deployAccountWithUDC(privateKey: string): Promise<void> {
-    try {
-      const publicKey = CryptoUtils.getPublicKey(privateKey);
-      const contractClassHash = CryptoUtils.getAccountClassHash();
-      
-      // Use stark.randomAddress() for salt like in the example
-      const salt = stark.randomAddress();
-      
-      // Calculate constructor calldata exactly like the example
-      const constructor = CallData.compile([publicKey, "0x0"]); // [owner, guardian]
-      
-      // Calculate the address where account will be deployed
-      const addressDeploy = hash.calculateContractAddressFromHash(
-        salt,
-        contractClassHash,
-        constructor,
-        0
-      );
-      
-      if (this.config.enableLogging) {
-        console.log('🔧 UDC deployment params:', {
-          calculatedAddress: addressDeploy,
-          classHash: contractClassHash,
-          constructor,
-          salt
-        });
-      }
+  private getAccountClassHash(accountClassName?: string): string {
+    // Default to Argent X account class hash
+    if (!accountClassName)
+      return "0x01a736d6ed154502257f02b1ccdf4d9d1089f80811cd6acad48e6b6a9d1f2003";
 
-      // Create UDC deployment call exactly like the example
-      const UDC_ADDRESS = '0x041a78e741e5af2fec34b695679bc6891742439f7afb8484ecd7766661ad02bf';
-      const deployCall: Call = {
-        contractAddress: UDC_ADDRESS,
-        entrypoint: 'deployContract',
-        calldata: CallData.compile({
-          classHash: contractClassHash,
-          salt: salt,
-          unique: "0",
-          calldata: constructor,
-        }),
-      };
-
-      // Create ETH transfer call to fund the new account
-      const ETH_CONTRACT = '0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7';
-      const fundingAmount = '100000000000000000'; // 0.1 ETH for deployment fees
-      
-      const transferCall: Call = {
-        contractAddress: ETH_CONTRACT,
-        entrypoint: 'transfer',
-        calldata: [addressDeploy, fundingAmount, '0x0'], // recipient, amount_low, amount_high
-      };
-
-      // Create a temporary account instance for the deployment
-      const provider = this.network.getProvider();
-      const tempAccount = new Account(provider, addressDeploy, privateKey);
-      
-      // Execute just the UDC deployment call using paymaster (gasless)
-      // No deployment data needed since UDC handles the deployment
-      const result = await this.paymaster.execute(
-        tempAccount,
-        [deployCall] // Just the UDC call, no extra deployment data
-      );
-      
-      if (this.config.enableLogging) {
-        console.log('✅ Account deployed and funded via UDC:', result.transactionHash);
-        console.log('🏠 New account address:', addressDeploy);
-      }
-      
-      // Wait for deployment to complete
-      await this.waitForTransaction(result.transactionHash);
-      
-      // Update current account to the newly deployed one
-      this.currentAccount = new Account(provider, addressDeploy, privateKey);
-      this.currentPrivateKey = privateKey;
-      
-    } catch (error) {
-      if (this.config.enableLogging) {
-        console.error('❌ UDC deployment failed:', error);
-      }
-      throw error;
+    if (accountClassName === "argentX") {
+      return "0x01a736d6ed154502257f02b1ccdf4d9d1089f80811cd6acad48e6b6a9d1f2003";
+    } else if (accountClassName === "devnet") {
+      return "0x02b31e19e45c06f29234e06e2ee98a9966479ba3067f8785ed972794fdb0065c";
+    } else {
+      if (this.config.enableLogging)
+        console.error(`Unsupported account class: ${accountClassName}`);
+      return "";
     }
+  }
+
+  /**
+   * POW's exact deploy calldata function
+   */
+  private getDeployCalldata(privateKey: string, accountClassName?: string) {
+    // Default to Argent X account class calldata
+    if (!accountClassName) {
+      const starkKeyPub = ec.starkCurve.getStarkKey(privateKey);
+      const constructorCalldata = CallData.compile({
+        owner: starkKeyPub,
+        guardian: "0x0",
+      });
+      return constructorCalldata;
+    }
+    if (accountClassName === "argentX") {
+      const starkKeyPub = ec.starkCurve.getStarkKey(privateKey);
+      const constructorCalldata = CallData.compile({
+        owner: starkKeyPub,
+        guardian: "0x0",
+      });
+      return constructorCalldata;
+    } else if (accountClassName === "devnet") {
+      const starkKeyPub = ec.starkCurve.getStarkKey(privateKey);
+      const constructorCalldata = CallData.compile({ pub_key: starkKeyPub });
+      return constructorCalldata;
+    } else {
+      if (this.config.enableLogging)
+        console.error(`Unsupported account class: ${accountClassName}`);
+      return CallData.compile({});
+    }
+  }
+
+  /**
+   * POW's exact generate account address function
+   */
+  private generateAccountAddress(privateKey: string, accountClassName?: string) {
+    const starkKeyPub = ec.starkCurve.getStarkKey(privateKey);
+    const constructorCalldata = this.getDeployCalldata(privateKey, accountClassName);
+    const contractAddress = hash.calculateContractAddressFromHash(
+      starkKeyPub,
+      this.getAccountClassHash(accountClassName),
+      constructorCalldata,
+      0,
+    );
+    return contractAddress;
+  }
+
+  /**
+   * Deploy account exactly like POW project does - no changes
+   */
+  private async deployAccountExactlyLikePOW(privateKey: string, accountClassName?: string): Promise<void> {
+    const provider = this.network.getProvider();
+
+    if (!provider) {
+      console.error("Provider is not initialized.");
+      return;
+    }
+
+    const starkKeyPub = ec.starkCurve.getStarkKey(privateKey);
+    const contractAddress = this.generateAccountAddress(
+      privateKey,
+      accountClassName,
+    );
+    const constructorCalldata = this.getDeployCalldata(
+      privateKey,
+      accountClassName,
+    );
+
+    const accountInstance = new Account(
+      provider,
+      contractAddress,
+      privateKey,
+    );
+    
+    const { transaction_hash, contract_address } = await accountInstance
+      .deployAccount(
+        {
+          classHash: this.getAccountClassHash(accountClassName),
+          constructorCalldata: constructorCalldata,
+          addressSalt: starkKeyPub,
+          contractAddress: contractAddress,
+        },
+        { maxFee: 100_000_000_000_000 },
+      )
+      .catch((error) => {
+        // POW's exact error handling - assume already deployed
+        return {
+          transaction_hash: "Account already exists",
+          contract_address: contractAddress,
+        };
+      });
+      
+    if (transaction_hash === "Account already exists") {
+      // Connect to existing account
+      this.currentAccount = new Account(provider, contractAddress, privateKey);
+      this.currentPrivateKey = privateKey;
+      if (this.config.enableLogging) {
+        console.log('Account already exists, connected:', contractAddress);
+      }
+      return;
+    }
+    
+    await provider.waitForTransaction(transaction_hash);
+    if (this.config.enableLogging)
+      console.log("✅ New account created.\n   address =", contract_address);
+    
+    // Connect to the newly deployed account
+    this.currentAccount = new Account(provider, contract_address, privateKey);
+    this.currentPrivateKey = privateKey;
   }
 
   /**
