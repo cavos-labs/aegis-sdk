@@ -86,8 +86,8 @@ export class AegisSDK {
         console.log('🔗 Connected to account:', account.address);
       }
       
-      // Deploy the account
-      await this.accountManager.deployAccount(privateKey);
+      // Deploy the account using paymaster (gasless)
+      await this.deployAccountWithPaymaster(privateKey);
       
       // Store the account
       await this.accountManager.storeKeyAndConnect(privateKey, this.config.appName);
@@ -112,6 +112,50 @@ export class AegisSDK {
           message: error instanceof Error ? error.message : String(error),
           stack: error instanceof Error ? error.stack : undefined
         });
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Deploy account using paymaster (gasless)
+   */
+  private async deployAccountWithPaymaster(privateKey: string): Promise<void> {
+    try {
+      // Check if account is already deployed
+      const account = await this.accountManager.connectAccount(privateKey);
+      const isDeployed = await this.accountManager.isAccountDeployed(account.address);
+      
+      if (isDeployed) {
+        if (this.config.enableLogging) {
+          console.log('Account already deployed, skipping deployment');
+        }
+        return;
+      }
+
+      // Get deployment data
+      const deploymentData = this.accountManager.getDeploymentData(privateKey);
+      
+      // Use empty calls array for deployment-only transaction
+      const calls: any[] = [];
+      
+      // Execute gasless deployment using paymaster
+      const result = await this.paymaster.execute(
+        account,
+        calls,
+        deploymentData
+      );
+      
+      if (this.config.enableLogging) {
+        console.log('✅ Account deployed with paymaster:', result.transactionHash);
+      }
+      
+      // Wait for deployment to complete
+      await this.waitForTransaction(result.transactionHash);
+      
+    } catch (error) {
+      if (this.config.enableLogging) {
+        console.error('❌ Gasless deployment failed:', error);
       }
       throw error;
     }
