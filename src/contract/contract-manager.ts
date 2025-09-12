@@ -64,11 +64,28 @@ export class ContractManager {
     abi?: any[]
   ): Promise<any> {
     try {
+      // If no ABI provided, use provider.callContract directly
+      if (!abi || abi.length === 0) {
+        const provider = this.network.getProvider();
+        const result = await provider.callContract({
+          contractAddress,
+          entrypoint: method,
+          calldata: CallData.compile(args)
+        });
+        return result;
+      }
+
       const contract = this.createContract(contractAddress, abi);
 
       if (!contract[method]) {
-        // Fallback to direct call if method not in ABI
-        return await contract.call(method, args);
+        // Fallback to provider.callContract for unknown methods
+        const provider = this.network.getProvider();
+        const result = await provider.callContract({
+          contractAddress,
+          entrypoint: method,
+          calldata: CallData.compile(args)
+        });
+        return result;
       }
 
       return await contract[method](...args);

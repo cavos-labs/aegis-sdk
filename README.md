@@ -158,7 +158,7 @@ console.log('NFTs:', nfts);
 ### Contract Calls (Read-Only)
 
 ```typescript
-// Call any contract view function
+// Call any contract view function (automatically handles Cairo version detection)
 const result = await sdk.call(
   '0x123...contract_address',
   'balanceOf', // method name
@@ -171,6 +171,24 @@ const allowance = await sdk.call(
   '0x123...token_contract',
   'allowance',
   [sdk.address, '0x456...spender_address']
+);
+
+// Optional: Provide ABI for better type safety and error handling
+const contractABI = [
+  {
+    name: 'balanceOf',
+    type: 'function',
+    inputs: [{ name: 'account', type: 'felt' }],
+    outputs: [{ name: 'balance', type: 'Uint256' }]
+  }
+  // ... rest of your contract ABI
+];
+
+const resultWithABI = await sdk.call(
+  '0x123...contract_address',
+  'balanceOf',
+  [sdk.address],
+  contractABI // Optional: Contract ABI for better type safety
 );
 ```
 
@@ -369,7 +387,9 @@ The SDK automatically handles account persistence:
 - **Isolation**: Each app has isolated account storage
 - **Security**: Private keys never leave the device unencrypted
 
-## Error Handling
+## Error Handling & Troubleshooting
+
+### Common Error Types
 
 ```typescript
 import { NetworkError, ValidationError, ExecutionError, DeploymentError } from '@cavos/aegis-sdk';
@@ -389,6 +409,61 @@ try {
   } else if (error instanceof DeploymentError) {
     console.error('Deployment failed:', error.message);
     // Handle account deployment issues
+  }
+}
+```
+
+### Common Issues & Solutions
+
+#### "Unable to determine Cairo version" Error
+**Fixed in latest version** - The SDK now automatically handles Cairo version detection for contract calls.
+
+```typescript
+// ✅ This now works without errors
+const result = await sdk.call('0x123...', 'balanceOf', [address]);
+
+// ✅ Optional: Provide ABI for better error handling
+const result = await sdk.call('0x123...', 'balanceOf', [address], contractABI);
+```
+
+#### Contract Call Failures
+If you're still experiencing contract call issues:
+
+```typescript
+try {
+  // Method 1: Basic call (recommended)
+  const result = await sdk.call(contractAddress, method, args);
+} catch (error) {
+  console.log('Basic call failed, trying with ABI...');
+  
+  // Method 2: With contract ABI
+  const result = await sdk.call(contractAddress, method, args, contractABI);
+}
+```
+
+#### Account Not Connected
+```typescript
+// Always check connection before operations
+if (!sdk.isConnected) {
+  console.log('No account connected. Please connect or deploy an account.');
+  // Deploy new account or connect existing one
+  const privateKey = await sdk.deployAccount();
+  // Account is now connected automatically
+}
+```
+
+#### Transaction Failures
+```typescript
+try {
+  const result = await sdk.execute(contractAddress, method, args);
+  console.log('Success:', result.transactionHash);
+} catch (error) {
+  if (error.message.includes('insufficient')) {
+    console.log('Insufficient balance or allowance');
+  } else if (error.message.includes('nonce')) {
+    console.log('Nonce issue - transaction may have been sent already');
+  } else {
+    console.log('Transaction failed:', error.message);
   }
 }
 ```

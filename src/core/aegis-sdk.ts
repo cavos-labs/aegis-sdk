@@ -287,16 +287,18 @@ export class AegisSDK {
    * @param contractAddress The contract address to call
    * @param method The function name to call
    * @param args Array of parameters for the function
+   * @param abi Optional contract ABI for better type safety
    * @returns The function result
    * @throws {Error} If the call fails
    */
   async call(
     contractAddress: string,
     method: string,
-    args: any[] = []
+    args: any[] = [],
+    abi?: any[]
   ): Promise<any> {
     try {
-      const result = await this.contractManager.callContract(contractAddress, method, args);
+      const result = await this.contractManager.callContract(contractAddress, method, args, abi);
       
       if (this.config.enableLogging) {
         console.log('✅ Contract call result:', result);
