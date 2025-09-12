@@ -12,6 +12,11 @@ export interface WalletConfig {
   maxRetries?: number;
   batchSize?: number;
   enableLogging?: boolean;
+  
+  // Tracking configuration
+  appId: string;                            // Developer's app identifier (required)
+  trackingApiUrl?: string;                  // Custom base URL (default: https://services.cavos.xyz)
+  trackingTimeout?: number;                 // Request timeout in ms (default: 5000)
 }
 
 export interface WalletAccount {
@@ -130,4 +135,30 @@ export class UserRejectionError extends WalletError {
 export class DeploymentError extends WalletError {
   code = 'DEPLOYMENT_ERROR';
   recoverable = true;
+}
+
+// Tracking interfaces
+export interface WalletTrackingData {
+  app_id: string;
+  address: string;
+  network: "mainnet" | "sepolia";
+  public_key?: string;
+  user_id?: string;
+}
+
+export interface TransactionTrackingData {
+  app_id: string;
+  transaction_hash: string;
+  network: "mainnet" | "sepolia";
+}
+
+export interface TrackingConfig {
+  appId: string;
+  baseUrl: string;                          // https://services.cavos.xyz
+  enabled: boolean;
+  timeout: number;
+  endpoints: {
+    wallet: string;                         // /api/v2/aegis/wallet
+    transaction: string;                    // /api/v2/aegis/transaction
+  };
 }
