@@ -147,7 +147,7 @@ export class AccountManager {
         },
         { 
           maxFee: 100_000_000_000_000,
-          version: "0x2"
+          version: 2
          } // Same maxFee as POW uses
       ).catch((error) => {
         // Handle already deployed case like POW does
