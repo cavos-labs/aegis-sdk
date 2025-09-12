@@ -86,8 +86,8 @@ export class AegisSDK {
         console.log('🔗 Connected to account:', account.address);
       }
       
-      // Deploy the account using POW's exact method
-      await this.deployAccountLikePOW(privateKey);
+      // Deploy the account using POW's paymaster approach
+      await this.deployAccountWithPaymasterLikePOW(privateKey);
       
       // Store the account
       await this.accountManager.storeKeyAndConnect(privateKey, this.config.appName);
@@ -118,58 +118,51 @@ export class AegisSDK {
   }
 
   /**
-   * Deploy account exactly like POW project does
+   * Deploy account using paymaster exactly like POW's invokeWithPaymaster does
    */
-  private async deployAccountLikePOW(privateKey: string): Promise<void> {
+  private async deployAccountWithPaymasterLikePOW(privateKey: string): Promise<void> {
     try {
+      // Create account instance like POW does in invokeWithPaymaster
       const provider = this.network.getProvider();
-      
-      // POW's exact deployment logic
-      const starkKeyPub = CryptoUtils.getPublicKey(privateKey);
       const contractAddress = this.accountManager.generateAccountAddress(privateKey);
-      const constructorCalldata = CryptoUtils.getConstructorCalldata(privateKey);
+      const invokeAccount = new Account(provider, contractAddress, privateKey);
+      
+      // Get deployment data like POW does
+      const deploymentData = {
+        class_hash: CryptoUtils.getAccountClassHash(),
+        calldata: [CryptoUtils.getPublicKey(privateKey), "0x0"],
+        salt: CryptoUtils.getPublicKey(privateKey),
+        unique: "0x0",
+      };
+      
+      if (this.config.enableLogging) {
+        console.log('🔧 POW paymaster deployment:', {
+          account: invokeAccount.address,
+          deploymentData,
+          calls: []
+        });
+      }
 
-      const accountInstance = new Account(
-        provider,
-        contractAddress,
-        privateKey,
+      // Use empty calls array for deployment-only transaction
+      const calls: any[] = [];
+      
+      // Execute gasless deployment using paymaster like POW does
+      const result = await this.paymaster.execute(
+        invokeAccount,
+        calls,
+        deploymentData
       );
       
-      const { transaction_hash, contract_address } = await accountInstance
-        .deployAccount(
-          {
-            classHash: CryptoUtils.getAccountClassHash(),
-            constructorCalldata: constructorCalldata,
-            addressSalt: starkKeyPub,
-            contractAddress: contractAddress,
-          },
-          { maxFee: 100_000_000_000_000 },
-        )
-        .catch((error) => {
-          // POW's exact error handling - assume already deployed
-          return {
-            transaction_hash: "Account already exists",
-            contract_address: contractAddress,
-          };
-        });
-        
-      if (transaction_hash === "Account already exists") {
-        if (this.config.enableLogging) {
-          console.log('Account already deployed, skipping deployment');
-        }
-        return;
+      if (this.config.enableLogging) {
+        console.log('✅ Account deployed with paymaster (POW style):', result.transactionHash);
       }
       
       // Wait for deployment to complete
-      await provider.waitForTransaction(transaction_hash);
-      
-      if (this.config.enableLogging) {
-        console.log("✅ New account created. address =", contract_address);
-      }
+      await this.waitForTransaction(result.transactionHash);
       
     } catch (error) {
       if (this.config.enableLogging) {
-        console.error('❌ POW-style deployment failed:', error);
+        console.error('❌ POW paymaster deployment failed:', error);
       }
       throw error;
     }
