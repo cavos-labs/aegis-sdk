@@ -134,32 +134,31 @@ export class AccountManager {
     }
 
     try {
-      const deploymentData = this.getDeploymentData(privateKey, accountType);
+      const starkKeyPub = CryptoUtils.getPublicKey(privateKey);
+      const contractAddress = this.generateAccountAddress(privateKey, accountType);
+      const constructorCalldata = CryptoUtils.getConstructorCalldata(privateKey, accountType);
       
-      const deployOptions = {
-        version: 3, // Use V3 transactions
-        resourceBounds: {
-          l1_gas: {
-            max_amount: '0x186a0', // 100000
-            max_price_per_unit: '0x5af3107a4000' // 100000000000000 wei
-          },
-          l2_gas: {
-            max_amount: '0x0',
-            max_price_per_unit: '0x0'
-          }
-        }
-      };
-      
-      // Add l1_data_gas field that RPC expects but types don't include yet
-      (deployOptions.resourceBounds as any).l1_data_gas = {
-        max_amount: '0x186a0', // 100000
-        max_price_per_unit: '0x1' // 1 wei
-      };
-
       const { transaction_hash } = await this.currentAccount.deployAccount(
-        deploymentData,
-        deployOptions
-      );
+        {
+          classHash: CryptoUtils.getAccountClassHash(accountType),
+          constructorCalldata: constructorCalldata,
+          addressSalt: starkKeyPub,
+          contractAddress: contractAddress,
+        },
+        { maxFee: 100_000_000_000_000 } // Same maxFee as POW uses
+      ).catch((error) => {
+        // Handle already deployed case like POW does
+        if (error instanceof Error && error.message.includes('already deployed')) {
+          console.log('Account already deployed, continuing...');
+          return { transaction_hash: "Account already exists" };
+        }
+        throw error;
+      });
+      
+      if (transaction_hash === "Account already exists") {
+        console.log('Account already deployed, skipping deployment');
+        return;
+      }
 
       // Wait for deployment to complete
       const isSuccess = await this.network.waitForTransaction(transaction_hash);
