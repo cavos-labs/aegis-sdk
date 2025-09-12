@@ -133,10 +133,12 @@ export class AegisSDK {
         return;
       }
 
+      // Use raw hex calldata format like POW does
+      const publicKey = CryptoUtils.getPublicKey(privateKey);
       const deploymentData = {
         class_hash: CryptoUtils.getAccountClassHash('argentX'),
-        calldata: CryptoUtils.getConstructorCalldata(privateKey, 'argentX'),
-        salt: CryptoUtils.getPublicKey(privateKey),
+        calldata: [publicKey, "0x0"], // Raw hex format: [owner, guardian]
+        salt: publicKey,
         unique: "0x0",
       };
       
