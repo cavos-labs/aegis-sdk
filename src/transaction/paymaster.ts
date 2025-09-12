@@ -52,9 +52,7 @@ export class PaymasterIntegration {
       const result = await executeCalls(
         account,
         calls,
-        {
-          deploymentData: executionOptions.deploymentData
-        },
+        deploymentData ? { deploymentData } : {},
         options
       );
 
