@@ -79,18 +79,22 @@ export class AegisSDK {
         throw new Error('Generated private key is invalid');
       }
       
-      // Connect to the account
-      const account = await this.accountManager.connectAccount(privateKey);
+      // Calculate the correct address using AVNU's method (before connecting)
+      const correctAddress = this.calculateAVNUAccountAddress(privateKey);
+      
+      // Deploy the account using AVNU's direct API endpoints
+      await this.deployAccountUsingPOWPaymaster(privateKey);
+      
+      // Connect to the account with the correct address
+      const provider = this.network.getProvider();
+      const account = new Account(provider, correctAddress, privateKey);
       
       if (this.config.enableLogging) {
         console.log('🔗 Connected to account:', account.address);
       }
       
-      // Deploy the account using POW's paymaster approach
-      await this.deployAccountUsingPOWPaymaster(privateKey);
-      
-      // Store the account
-      await this.accountManager.storeKeyAndConnect(privateKey, this.config.appName);
+      // Store the account (we'll need to handle storage separately since AccountManager uses different address calculation)
+      // await this.accountManager.storeKeyAndConnect(privateKey, this.config.appName);
       
       // Set as current account
       this.currentAccount = account;
@@ -115,6 +119,30 @@ export class AegisSDK {
       }
       throw error;
     }
+  }
+
+  /**
+   * Calculate account address using AVNU's method (same as deployment)
+   */
+  private calculateAVNUAccountAddress(privateKey: string): string {
+    const argentXaccountClassHash = "0x036078334509b514626504edc9fb252328d1a240e4e948bef8d0c08dff45927f";
+    const starkKeyPubAX = ec.starkCurve.getStarkKey(privateKey);
+
+    const axSigner = new CairoCustomEnum({
+      Starknet: { pubkey: starkKeyPubAX },
+    });
+    const axGuardian = new CairoOption(1);
+    const ArgentAAConstructorCallData = CallData.compile({
+      owner: axSigner,
+      guardian: axGuardian,
+    });
+
+    return hash.calculateContractAddressFromHash(
+      argentXaccountClassHash,
+      argentXaccountClassHash,
+      ArgentAAConstructorCallData,
+      0
+    );
   }
 
   /**
