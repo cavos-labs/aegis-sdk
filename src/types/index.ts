@@ -58,7 +58,7 @@ export interface PaymasterConfig {
 export interface NetworkConfig {
   rpcUrl: string;
   chainId: string;
-  specVersion: string;
+  specVersion: "0.8.1" | "0.7.1" | undefined;
   blockExplorer?: string;
   faucetUrl?: string;
 }
