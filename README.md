@@ -299,6 +299,26 @@ const approveResult = await sdk.approveToken(
 );
 ```
 
+### Utility Functions
+
+The SDK provides utility functions for handling Starknet-specific data types:
+
+```typescript
+import { parseUint256, formatTokenBalance, parseTokenAmount, formatDisplayBalance } from '@cavos/aegis-sdk';
+
+// Parse Uint256 values from contract responses
+const uint256Value = parseUint256(['0x64', '0x0']); // Handles [low, high] format
+const singleValue = parseUint256('0x64'); // Handles single values
+const commaValue = parseUint256('0x64,0x0'); // Handles comma-separated format
+
+// Format token balances
+const balance = formatTokenBalance(1000000000000000000n, 18); // "1"
+const displayBalance = formatDisplayBalance("1.23456789", 4); // "1.2346"
+
+// Convert amounts for transactions
+const weiAmount = parseTokenAmount("1.5", 18); // 1500000000000000000n
+```
+
 ## Configuration Options
 
 ```typescript
@@ -424,6 +444,18 @@ const result = await sdk.call('0x123...', 'balanceOf', [address]);
 
 // ✅ Optional: Provide ABI for better error handling
 const result = await sdk.call('0x123...', 'balanceOf', [address], contractABI);
+```
+
+#### "Cannot convert 0x0,0x0 to a BigInt" Error
+**Fixed in latest version** - The SDK now properly handles Uint256 values from Starknet contracts.
+
+```typescript
+// ✅ These now work correctly with Uint256 responses
+const ethBalance = await sdk.getETHBalance();
+const tokenBalance = await sdk.getTokenBalance('0x123...token');
+
+// ✅ Contract calls that return Uint256 values are handled automatically
+const balance = await sdk.call('0x123...', 'balanceOf', [address]);
 ```
 
 #### Contract Call Failures

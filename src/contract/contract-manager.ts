@@ -2,6 +2,8 @@ import { Account, Call, Contract, CallData } from 'starknet';
 import { NetworkManager } from '../network/network-manager';
 import { TransactionManager } from '../transaction/transaction-manager';
 import { ExecutionOptions, TransactionResult, ExecutionError, ValidationError } from '../types';
+import { parseUint256, formatTokenBalance } from '../utils/starknet-utils';
+import { ERC20_ABI } from '../abi/ERC20';
 
 export interface ContractCall {
   contractAddress: string;
@@ -217,14 +219,11 @@ export class ContractManager {
     decimals: number = 18
   ): Promise<string> {
     try {
-      const balance = await this.callContract(tokenAddress, 'balanceOf', [accountAddress]);
+      const balance = await this.callContract(tokenAddress, 'balanceOf', [accountAddress], ERC20_ABI);
       
-      // Convert from contract units to token units
-      const balanceBigInt = BigInt(balance.toString());
-      const divisor = BigInt(10 ** decimals);
-      const tokenBalance = balanceBigInt / divisor;
-      
-      return tokenBalance.toString();
+      // Parse Uint256 response and convert to token units
+      const balanceBigInt = parseUint256(balance);
+      return formatTokenBalance(balanceBigInt, decimals);
     } catch (error) {
       console.error('Failed to get ERC20 balance:', error);
       return '0';

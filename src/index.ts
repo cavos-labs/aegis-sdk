@@ -15,6 +15,9 @@ export { TransactionManager } from './transaction/transaction-manager';
 export { ContractManager } from './contract/contract-manager';
 export { BalanceManager } from './balance/balance-manager';
 
+// Utility functions
+export * from './utils/starknet-utils';
+
 // Hooks (re-export from context)
 export { useWallet } from './context/wallet-context';
 

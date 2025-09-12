@@ -1,6 +1,7 @@
 import { NetworkManager } from '../network/network-manager';
 import { ContractManager } from '../contract/contract-manager';
 import { NFTToken, NetworkError, ValidationError } from '../types';
+import { parseUint256, formatTokenBalance } from '../utils/starknet-utils';
 
 interface CacheEntry<T> {
   data: T;
@@ -80,14 +81,14 @@ export class BalanceManager {
         const balance = await provider.callContract({
           contractAddress: ETH_CONTRACT,
           entrypoint: 'balanceOf',
-          calldata: [address]
+          calldata: [address],
         });
         
-        // Convert from wei to ETH (18 decimals)
-        const balanceBigInt = BigInt(balance[0]);
-        const ethBalance = balanceBigInt / BigInt(10 ** 18);
+        // Parse Uint256 response and convert to ETH units
+        const balanceBigInt = parseUint256(balance);
+        const ethBalance = formatTokenBalance(balanceBigInt, 18);
         
-        return ethBalance.toString();
+        return ethBalance;
       } catch (error) {
         console.error('Failed to get ETH balance:', error);
         return '0';
