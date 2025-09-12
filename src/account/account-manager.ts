@@ -151,10 +151,10 @@ export class AccountManager {
       };
       
       // Add l1_data_gas field that RPC expects but types don't include yet
-      // (deployOptions.resourceBounds as any).l1_data_gas = {
-      //   max_amount: '0x186a0', // 100000
-      //   max_price_per_unit: '0x1' // 1 wei
-      // };
+      (deployOptions.resourceBounds as any).l1_data_gas = {
+        max_amount: '0x186a0', // 100000
+        max_price_per_unit: '0x1' // 1 wei
+      };
 
       const { transaction_hash } = await this.currentAccount.deployAccount(
         deploymentData,
