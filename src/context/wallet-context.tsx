@@ -35,9 +35,9 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children, config
   const [error, setError] = useState<Error | null>(null);
 
   // Managers
-  const [storage] = useState(() => new SecureStorage(`aegis-${config.appName}`));
-  const [network] = useState(() => new NetworkManager(config.network, config.rpcUrl));
-  const [accountManager] = useState(() => new AccountManager(storage, network));
+  const [storage] = useState(() => new SecureStorage());
+  const [network] = useState(() => new NetworkManager(config.network, config.rpcUrl, config.enableLogging));
+  const [accountManager] = useState(() => new AccountManager(storage, network, config.enableLogging));
   
   const [paymaster] = useState(() => {
     const paymasterConfig: PaymasterConfig = {
@@ -45,15 +45,15 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children, config
       backendUrl: config.paymasterBackendUrl,
       supportedNetworks: ['SN_MAINNET', 'SN_SEPOLIA'],
     };
-    return new PaymasterIntegration(network, paymasterConfig);
+    return new PaymasterIntegration(network, paymasterConfig, config.enableLogging);
   });
 
-  const [transactionManager] = useState(() => 
-    new TransactionManager(network, paymaster, config.batchSize, config.maxRetries)
+  const [transactionManager] = useState(() =>
+    new TransactionManager(network, paymaster, config.batchSize, config.maxRetries, config.enableLogging)
   );
 
-  const [contractManager] = useState(() => new ContractManager(network, transactionManager));
-  const [balanceManager] = useState(() => new BalanceManager(network, contractManager));
+  const [contractManager] = useState(() => new ContractManager(network, transactionManager, config.enableLogging));
+  const [balanceManager] = useState(() => new BalanceManager(network, contractManager, config.enableLogging));
 
   // Initialize network connection on mount
   useEffect(() => {
@@ -142,29 +142,9 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children, config
   }, [accountManager]);
 
   const exportPrivateKey = useCallback(async (): Promise<string | null> => {
-    try {
-      if (!account) {
-        throw new Error('No account connected');
-      }
-
-      // Try to get stored accounts for this app
-      const storedAccounts = await accountManager.getStoredAccounts(config.appName);
-      const currentAddress = account.address;
-      
-      // Find the storage key for current account
-      const storageKey = storedAccounts.find(key => key.includes(currentAddress));
-      
-      if (storageKey) {
-        return await accountManager.exportPrivateKey(storageKey);
-      }
-
-      // Fallback: try to get from account object (if available)
-      return (account as any)?.signer?.pk || null;
-    } catch (error) {
-      console.error('Failed to export private key:', error);
-      return null;
-    }
-  }, [account, accountManager, config.appName]);
+    // Private key export not supported - users handle their own key storage
+    return null;
+  }, []);
 
   const executeTransaction = useCallback(async (
     calls: Call[],
@@ -233,7 +213,6 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children, config
       }
       return await balanceManager.getETHBalance(targetAddress);
     } catch (error) {
-      console.error('Failed to get ETH balance:', error);
       return '0';
     }
   }, [balanceManager, address]);
@@ -251,7 +230,6 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children, config
       }
       return await balanceManager.getERC20Balance(tokenAddress, targetAddress, decimals);
     } catch (error) {
-      console.error('Failed to get ERC20 balance:', error);
       return '0';
     }
   }, [balanceManager, address]);
@@ -268,7 +246,6 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children, config
       }
       return await balanceManager.getERC721Tokens(contractAddress, targetAddress);
     } catch (error) {
-      console.error('Failed to get ERC721 tokens:', error);
       return [];
     }
   }, [balanceManager, address]);
@@ -278,7 +255,6 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children, config
       setError(null);
       return await transactionManager.waitForTransaction(txHash);
     } catch (error) {
-      console.error('Failed to wait for transaction:', error);
       return false;
     }
   }, [transactionManager]);
@@ -290,7 +266,6 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children, config
       setError(null);
       return await transactionManager.getTransactionStatus(txHash);
     } catch (error) {
-      console.error('Failed to get transaction status:', error);
       return 'pending';
     }
   }, [transactionManager]);

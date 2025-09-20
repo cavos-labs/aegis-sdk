@@ -5,16 +5,18 @@ export class NetworkManager {
   private provider: RpcProvider | null = null;
   private currentNetwork: NetworkType;
   private config: Record<NetworkType, NetworkConfig>;
+  private enableLogging: boolean;
 
-  constructor(network: NetworkType = 'SN_SEPOLIA', customRpcUrl?: string) {
+  constructor(network: NetworkType = 'SN_SEPOLIA', customRpcUrl?: string, enableLogging: boolean = false) {
     this.currentNetwork = network;
     this.config = this.getDefaultNetworkConfigs();
-    
+    this.enableLogging = enableLogging;
+
     // Override RPC URL if provided
     if (customRpcUrl) {
       this.config[network].rpcUrl = customRpcUrl;
     }
-    
+
     this.initializeProvider();
   }
 
@@ -103,7 +105,9 @@ export class NetworkManager {
       
       return chainId === expectedChainId;
     } catch (error) {
-      console.error('Connection test failed:', error);
+      if (this.enableLogging) {
+        console.error('Connection test failed:', error);
+      }
       return false;
     }
   }
@@ -210,7 +214,9 @@ export class NetworkManager {
       
       return 'pending';
     } catch (error) {
-      console.error('Failed to get transaction status:', error);
+      if (this.enableLogging) {
+        console.error('Failed to get transaction status:', error);
+      }
       return 'pending';
     }
   }

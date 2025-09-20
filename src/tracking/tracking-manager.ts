@@ -53,14 +53,20 @@ export class TrackingManager {
     // Fire-and-forget implementation using setTimeout for true async execution
     setTimeout(async () => {
       try {
+        // Create AbortController for timeout (React Native compatible)
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), this.config.timeout);
+
         const response = await fetch(`${this.config.baseUrl}${endpoint}`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify(payload),
-          signal: AbortSignal.timeout(this.config.timeout)
+          signal: controller.signal
         });
+
+        clearTimeout(timeoutId);
 
         if (!response.ok) {
           this.handleTrackingError(

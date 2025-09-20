@@ -192,7 +192,6 @@ export class CryptoUtils {
       this.getPublicKey(privateKey);
       return true;
     } catch (error) {
-      console.error('Private key validation error:', error);
       return false;
     }
   }

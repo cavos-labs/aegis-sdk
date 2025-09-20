@@ -36,28 +36,29 @@ export class AegisSDK {
 
   constructor(config: WalletConfig) {
     this.config = config;
-    
+
     // Initialize managers
-    this.storage = new SecureStorage(`aegis-${config.appName}`);
-    this.network = new NetworkManager(config.network, config.rpcUrl);
-    this.accountManager = new AccountManager(this.storage, this.network);
+    this.storage = new SecureStorage(); // Simplified storage
+    this.network = new NetworkManager(config.network, config.rpcUrl, config.enableLogging);
+    this.accountManager = new AccountManager(this.storage, this.network, config.enableLogging);
     
     const paymasterConfig: PaymasterConfig = {
       apiKey: config.paymasterApiKey,
       backendUrl: config.paymasterBackendUrl,
       supportedNetworks: ['SN_MAINNET', 'SN_SEPOLIA'],
     };
-    this.paymaster = new PaymasterIntegration(this.network, paymasterConfig);
+    this.paymaster = new PaymasterIntegration(this.network, paymasterConfig, config.enableLogging);
     
     this.transactionManager = new TransactionManager(
-      this.network, 
-      this.paymaster, 
-      config.batchSize, 
-      config.maxRetries
+      this.network,
+      this.paymaster,
+      config.batchSize,
+      config.maxRetries,
+      config.enableLogging
     );
     
-    this.contractManager = new ContractManager(this.network, this.transactionManager);
-    this.balanceManager = new BalanceManager(this.network, this.contractManager);
+    this.contractManager = new ContractManager(this.network, this.transactionManager, config.enableLogging);
+    this.balanceManager = new BalanceManager(this.network, this.contractManager, config.enableLogging);
     
     // Initialize tracking (always enabled since appId is required)
     const trackingConfig: TrackingConfig = {
@@ -81,17 +82,26 @@ export class AegisSDK {
       });
     }
 
-    // Try to load existing account for this app
-    this.loadExistingAccount().catch(error => {
-      if (config.enableLogging) {
-        console.debug('No existing account found or failed to load:', error.message);
-      }
-    });
+    // Auto-loading removed - users explicitly connect with their own stored keys
   }
 
   // ===============================
   // ACCOUNT MANAGEMENT
   // ===============================
+
+  /**
+   * Generate a new private key without deploying
+   * @returns The private key - store it securely!
+   */
+  generateAccount(): string {
+    const privateKey = this.accountManager.generatePrivateKey();
+
+    if (this.config.enableLogging) {
+      console.log('Generated new private key');
+    }
+
+    return privateKey;
+  }
 
   /**
    * Deploy a new account with gasless deployment via AVNU
@@ -117,7 +127,7 @@ export class AegisSDK {
     const account = await this.accountManager.connectAVNUAccount(privateKey);
     
     // Store the account for persistence
-    await this.accountManager.storeAccount(privateKey, this.config.appName, 'argentX');
+    // Storage removed - users handle their own key storage
     
     // Update managers
     this.transactionManager.setAccount(account);
@@ -154,7 +164,7 @@ export class AegisSDK {
       }
       
       // Store the account for persistence
-      await this.accountManager.storeAccount(privateKey, this.config.appName, 'argentX');
+      // Storage removed - users handle their own key storage
       
       // Update managers
       this.transactionManager.setAccount(account);
@@ -437,46 +447,7 @@ export class AegisSDK {
   /**
    * Get stored accounts for this app
    */
-  async getStoredAccounts(): Promise<string[]> {
-    try {
-      return await this.accountManager.getStoredAccounts(this.config.appName);
-    } catch (error) {
-      if (this.config.enableLogging) {
-        console.error('❌ Get stored accounts failed:', error);
-      }
-      return [];
-    }
-  }
-
-  /**
-   * Export current private key
-   */
-  async exportPrivateKey(): Promise<string | null> {
-    const currentAddress = this.accountManager.getCurrentAddress();
-    if (!currentAddress) {
-      return null;
-    }
-
-    try {
-      // Get all stored accounts for this app
-      const storedAccounts = await this.accountManager.getStoredAccounts(this.config.appName);
-      
-      // Find the storage key for the current address
-      for (const storageKey of storedAccounts) {
-        const metadata = await this.accountManager.getAccountMetadata(storageKey);
-        if (metadata?.address === currentAddress) {
-          return await this.accountManager.exportPrivateKey(storageKey);
-        }
-      }
-      
-      return null;
-    } catch (error) {
-      if (this.config.enableLogging) {
-        console.error('❌ Export private key failed:', error);
-      }
-      return null;
-    }
-  }
+  // getStoredAccounts and exportPrivateKey removed - users handle their own key storage
 
   /**
    * Switch network
@@ -646,30 +617,5 @@ export class AegisSDK {
     }
   }
 
-  /**
-   * Try to load an existing account for this app
-   * @private
-   */
-  private async loadExistingAccount(): Promise<void> {
-    try {
-      const storedAccounts = await this.accountManager.getStoredAccounts(this.config.appName);
-      
-      if (storedAccounts.length > 0) {
-        // Load the first account found (most recent)
-        const storageKey = storedAccounts[0];
-        const account = await this.accountManager.connectStoredAccount(storageKey);
-        
-        // Update managers
-        this.transactionManager.setAccount(account);
-        this.contractManager.setAccount(account);
-        
-        if (this.config.enableLogging) {
-          console.log(`🔄 Loaded existing account: ${account.address}`);
-        }
-      }
-    } catch (error) {
-      // Silent failure - no existing account or connection failed
-      throw new Error(`Failed to load existing account: ${error}`);
-    }
-  }
+  // loadExistingAccount method completely removed - users handle their own key storage
 }

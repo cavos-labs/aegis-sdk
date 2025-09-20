@@ -14,10 +14,12 @@ export class BalanceManager {
   private contractManager: ContractManager;
   private cache: Map<string, CacheEntry<any>> = new Map();
   private cacheTimeout: number = 30000; // 30 seconds
+  private enableLogging: boolean;
 
-  constructor(network: NetworkManager, contractManager: ContractManager) {
+  constructor(network: NetworkManager, contractManager: ContractManager, enableLogging: boolean = false) {
     this.network = network;
     this.contractManager = contractManager;
+    this.enableLogging = enableLogging;
   }
 
   private getCacheKey(type: string, ...params: string[]): string {
@@ -28,7 +30,9 @@ export class BalanceManager {
     try {
       return await this.network.getBlockNumber();
     } catch (error) {
-      console.warn('Failed to get current block number:', error);
+      if (this.enableLogging) {
+        console.warn('Failed to get current block number:', error);
+      }
       return 0;
     }
   }
@@ -59,7 +63,9 @@ export class BalanceManager {
     } catch (error) {
       // Return cached data if available, even if expired
       if (cached) {
-        console.warn('Using cached data due to fetch error:', error);
+        if (this.enableLogging) {
+          console.warn('Using cached data due to fetch error:', error);
+        }
         return cached.data;
       }
       throw error;
@@ -90,7 +96,9 @@ export class BalanceManager {
         
         return ethBalance;
       } catch (error) {
-        console.error('Failed to get ETH balance:', error);
+        if (this.enableLogging) {
+          console.error('Failed to get ETH balance:', error);
+        }
         return '0';
       }
     });
@@ -186,14 +194,18 @@ export class BalanceManager {
             tokens.push(token);
           } catch (error) {
             // If tokenOfOwnerByIndex doesn't exist, we can't enumerate tokens
-            console.warn('Could not enumerate NFT tokens:', error);
+            if (this.enableLogging) {
+              console.warn('Could not enumerate NFT tokens:', error);
+            }
             break;
           }
         }
 
         return tokens;
       } catch (error) {
-        console.error('Failed to get ERC721 tokens:', error);
+        if (this.enableLogging) {
+          console.error('Failed to get ERC721 tokens:', error);
+        }
         return [];
       }
     });
@@ -232,7 +244,9 @@ export class BalanceManager {
               }
             }
           } catch (error) {
-            console.warn('Failed to fetch NFT metadata:', error);
+            if (this.enableLogging) {
+              console.warn('Failed to fetch NFT metadata:', error);
+            }
           }
         }
 

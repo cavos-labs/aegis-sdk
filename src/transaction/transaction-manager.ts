@@ -20,17 +20,20 @@ export class TransactionManager {
   private isProcessing: boolean = false;
   private batchSize: number;
   private maxRetries: number;
+  private enableLogging: boolean;
 
   constructor(
     network: NetworkManager,
     paymaster: PaymasterIntegration,
     batchSize: number = 100,
-    maxRetries: number = 3
+    maxRetries: number = 3,
+    enableLogging: boolean = false
   ) {
     this.network = network;
     this.paymaster = paymaster;
     this.batchSize = batchSize;
     this.maxRetries = maxRetries;
+    this.enableLogging = enableLogging;
   }
 
   setAccount(account: Account | null): void {
@@ -120,14 +123,18 @@ export class TransactionManager {
         const errorMessage = error instanceof Error ? error.message : String(error);
         
         if (attempt < retries) {
-          console.warn(
-            `Transaction failed (attempt ${attempt + 1}/${retries + 1}): ${errorMessage}. Retrying in ${RETRY_DELAY_MS}ms...`
-          );
+          if (this.enableLogging) {
+            console.warn(
+              `Transaction failed (attempt ${attempt + 1}/${retries + 1}): ${errorMessage}. Retrying in ${RETRY_DELAY_MS}ms...`
+            );
+          }
           await this.delay(RETRY_DELAY_MS);
         } else {
-          console.error(
-            `Transaction permanently failed after ${retries + 1} attempts: ${errorMessage}`
-          );
+          if (this.enableLogging) {
+            console.error(
+              `Transaction permanently failed after ${retries + 1} attempts: ${errorMessage}`
+            );
+          }
           throw new ExecutionError(`Transaction failed after ${retries + 1} attempts: ${errorMessage}`);
         }
       }
@@ -200,7 +207,9 @@ export class TransactionManager {
             const isConfirmed = await this.network.waitForTransaction(result.transactionHash);
             
             if (isConfirmed) {
-              console.log(`✅ Transaction ${transaction.id} confirmed: ${result.transactionHash}`);
+              if (this.enableLogging) {
+                console.log(`✅ Transaction ${transaction.id} confirmed: ${result.transactionHash}`);
+              }
               this.queue.shift(); // Remove completed transaction
             } else {
               throw new ExecutionError(`Transaction ${result.transactionHash} failed confirmation`);
@@ -212,9 +221,11 @@ export class TransactionManager {
           if (transaction.retryCount < transaction.maxRetries) {
             transaction.retryCount++;
             transaction.lastError = errorMessage;
-            console.warn(
-              `Transaction ${transaction.id} failed (attempt ${transaction.retryCount}/${transaction.maxRetries + 1}). Will retry...`
-            );
+            if (this.enableLogging) {
+              console.warn(
+                `Transaction ${transaction.id} failed (attempt ${transaction.retryCount}/${transaction.maxRetries + 1}). Will retry...`
+              );
+            }
             
             // Move to end of queue for retry
             this.queue.shift();
@@ -222,9 +233,11 @@ export class TransactionManager {
             
             await this.delay(2000);
           } else {
-            console.error(
-              `Transaction ${transaction.id} permanently failed after ${transaction.maxRetries + 1} attempts: ${errorMessage}`
-            );
+            if (this.enableLogging) {
+              console.error(
+                `Transaction ${transaction.id} permanently failed after ${transaction.maxRetries + 1} attempts: ${errorMessage}`
+              );
+            }
             this.queue.shift(); // Remove failed transaction
           }
         }
@@ -263,7 +276,9 @@ export class TransactionManager {
     try {
       return await this.network.waitForTransaction(txHash, timeout);
     } catch (error) {
-      console.error('Error waiting for transaction:', error);
+      if (this.enableLogging) {
+        console.error('Error waiting for transaction:', error);
+      }
       return false;
     }
   }
@@ -272,7 +287,9 @@ export class TransactionManager {
     try {
       return await this.network.getTransactionStatus(txHash);
     } catch (error) {
-      console.error('Error getting transaction status:', error);
+      if (this.enableLogging) {
+        console.error('Error getting transaction status:', error);
+      }
       return 'pending';
     }
   }

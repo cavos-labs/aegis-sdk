@@ -16,10 +16,12 @@ export class ContractManager {
   private network: NetworkManager;
   private transactionManager: TransactionManager;
   private contractCache: Map<string, Contract> = new Map();
+  private enableLogging: boolean;
 
-  constructor(network: NetworkManager, transactionManager: TransactionManager) {
+  constructor(network: NetworkManager, transactionManager: TransactionManager, enableLogging: boolean = false) {
     this.network = network;
     this.transactionManager = transactionManager;
+    this.enableLogging = enableLogging;
   }
 
   setAccount(account: Account | null): void {
@@ -225,7 +227,9 @@ export class ContractManager {
       const balanceBigInt = parseUint256(balance);
       return formatTokenBalance(balanceBigInt, decimals);
     } catch (error) {
-      console.error('Failed to get ERC20 balance:', error);
+      if (this.enableLogging) {
+        console.error('Failed to get ERC20 balance:', error);
+      }
       return '0';
     }
   }
@@ -312,7 +316,9 @@ export class ContractManager {
       const uri = await this.callContract(tokenAddress, 'tokenURI', [tokenId]);
       return uri.toString();
     } catch (error) {
-      console.error('Failed to get NFT token URI:', error);
+      if (this.enableLogging) {
+        console.error('Failed to get NFT token URI:', error);
+      }
       return '';
     }
   }
@@ -340,7 +346,9 @@ export class ContractManager {
       const code = await this.getContractCode(contractAddress);
       return code && code.bytecode && code.bytecode.length > 0;
     } catch (error) {
-      console.error('Failed to check contract deployment:', error);
+      if (this.enableLogging) {
+        console.error('Failed to check contract deployment:', error);
+      }
       return false;
     }
   }

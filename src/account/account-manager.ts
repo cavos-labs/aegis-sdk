@@ -8,10 +8,12 @@ export class AccountManager {
   private storage: SecureStorage;
   private network: NetworkManager;
   private currentAccount: Account | null = null;
+  private enableLogging: boolean;
 
-  constructor(storage: SecureStorage, network: NetworkManager) {
+  constructor(storage: SecureStorage, network: NetworkManager, enableLogging: boolean = false) {
     this.storage = storage;
     this.network = network;
+    this.enableLogging = enableLogging;
   }
 
   generatePrivateKey(): string {
@@ -43,58 +45,7 @@ export class AccountManager {
     };
   }
 
-  private generateStorageKey(appName: string, accountType: AccountType, address: string): string {
-    const network = this.network.getCurrentNetwork();
-    return `${network}.${appName}.${accountType}.${address}`;
-  }
-
-  async storeAccount(
-    privateKey: string,
-    appName: string,
-    accountType: AccountType = 'argentX'
-  ): Promise<string> {
-    if (!CryptoUtils.isValidPrivateKey(privateKey)) {
-      throw new ValidationError('Invalid private key provided');
-    }
-
-    const address = this.generateAccountAddress(privateKey, accountType);
-    const storageKey = this.generateStorageKey(appName, accountType, address);
-
-    await this.storage.storePrivateKey(storageKey, privateKey);
-
-    // Store account metadata
-    const accountData: WalletAccount = {
-      address,
-      privateKey: '', // Don't store in metadata
-      accountType,
-      isDeployed: false, // Will be updated after deployment
-      network: this.network.getCurrentNetwork(),
-    };
-
-    await this.storage.storeValue(`${storageKey}.metadata`, JSON.stringify(accountData));
-
-    return storageKey;
-  }
-
-  async getStoredAccounts(appName: string): Promise<string[]> {
-    const allKeys = await this.storage.getAllKeys();
-    const network = this.network.getCurrentNetwork();
-    const prefix = `${network}.${appName}.`;
-    
-    return allKeys.filter(key => key.startsWith(prefix) && !key.endsWith('.metadata'));
-  }
-
-  async getAccountMetadata(storageKey: string): Promise<WalletAccount | null> {
-    try {
-      const metadataJson = await this.storage.getValue(`${storageKey}.metadata`);
-      if (!metadataJson) return null;
-      
-      return JSON.parse(metadataJson) as WalletAccount;
-    } catch (error) {
-      console.error('Failed to get account metadata:', error);
-      return null;
-    }
-  }
+  // Storage-related methods removed - users handle their own key storage
 
   async connectAccount(privateKey: string, accountType: AccountType = 'argentX'): Promise<Account> {
     if (!CryptoUtils.isValidPrivateKey(privateKey)) {
@@ -108,17 +59,7 @@ export class AccountManager {
     return this.currentAccount;
   }
 
-  async connectStoredAccount(storageKey: string): Promise<Account> {
-    const privateKey = await this.storage.getPrivateKey(storageKey);
-    if (!privateKey) {
-      throw new ValidationError('Account not found in storage');
-    }
-
-    const metadata = await this.getAccountMetadata(storageKey);
-    const accountType = metadata?.accountType || 'argentX';
-
-    return this.connectAccount(privateKey, accountType);
-  }
+  // connectStoredAccount removed - users handle their own key storage
 
   async deployAccount(
     privateKey: string,
@@ -149,14 +90,15 @@ export class AccountManager {
       ).catch((error) => {
         // Handle already deployed case like POW does
         if (error instanceof Error && error.message.includes('already deployed')) {
-          console.log('Account already deployed, continuing...');
           return { transaction_hash: "Account already exists" };
         }
         throw error;
       });
       
       if (transaction_hash === "Account already exists") {
-        console.log('Account already deployed, skipping deployment');
+        if (this.enableLogging) {
+          console.log('Account already deployed, skipping deployment');
+        }
         return;
       }
 
@@ -166,11 +108,11 @@ export class AccountManager {
       if (!isSuccess) {
         throw new DeploymentError(`Account deployment failed: ${transaction_hash}`);
       }
-
-      console.log(`Account deployed successfully: ${this.currentAccount.address}`);
     } catch (error) {
       if (error instanceof Error && error.message.includes('already deployed')) {
-        console.log('Account already deployed, continuing...');
+        if (this.enableLogging) {
+          console.log('Account already deployed, continuing...');
+        }
         return;
       }
       throw new DeploymentError(`Failed to deploy account: ${error}`);
@@ -190,13 +132,7 @@ export class AccountManager {
     }
   }
 
-  async updateDeploymentStatus(storageKey: string, isDeployed: boolean): Promise<void> {
-    const metadata = await this.getAccountMetadata(storageKey);
-    if (metadata) {
-      metadata.isDeployed = isDeployed;
-      await this.storage.storeValue(`${storageKey}.metadata`, JSON.stringify(metadata));
-    }
-  }
+  // updateDeploymentStatus removed - users handle their own storage
 
   getCurrentAccount(): Account | null {
     return this.currentAccount;
@@ -206,33 +142,13 @@ export class AccountManager {
     return this.currentAccount?.address || null;
   }
 
-  async exportPrivateKey(storageKey: string): Promise<string | null> {
-    return await this.storage.getPrivateKey(storageKey);
-  }
-
-  async removeAccount(storageKey: string): Promise<void> {
-    await this.storage.removePrivateKey(storageKey);
-    await this.storage.removeValue(`${storageKey}.metadata`);
-  }
+  // exportPrivateKey and removeAccount removed - users handle their own storage
 
   disconnectAccount(): void {
     this.currentAccount = null;
   }
 
-  async storeKeyAndConnect(
-    privateKey: string,
-    appName: string,
-    accountType: AccountType = 'argentX'
-  ): Promise<Account> {
-    const storageKey = await this.storeAccount(privateKey, appName, accountType);
-    const account = await this.connectAccount(privateKey, accountType);
-    
-    // Check if account is deployed
-    const isDeployed = await this.isAccountDeployed(account.address);
-    await this.updateDeploymentStatus(storageKey, isDeployed);
-    
-    return account;
-  }
+  // storeKeyAndConnect removed - users handle their own storage, use connectAccount directly
 
   async getAccountBalance(address?: string): Promise<string> {
     const targetAddress = address || this.getCurrentAddress();
@@ -251,19 +167,14 @@ export class AccountManager {
       });
       return balance[0];
     } catch (error) {
-      console.error('Failed to get account balance:', error);
+      if (this.enableLogging) {
+        console.error('Failed to get account balance:', error);
+      }
       return '0';
     }
   }
 
-  async validateAccountAccess(storageKey: string): Promise<boolean> {
-    try {
-      const privateKey = await this.storage.getPrivateKey(storageKey);
-      return privateKey !== null && CryptoUtils.isValidPrivateKey(privateKey);
-    } catch (error) {
-      return false;
-    }
-  }
+  // validateAccountAccess removed - users handle their own storage
 
   /**
    * Calculate account address using AVNU's ArgentX deployment method
@@ -382,7 +293,6 @@ export class AccountManager {
       }
 
       const result = await executeResponse.json();
-      console.log(`Account deployed with transaction: ${result.transactionHash}`);
 
       return contractAddress;
     } catch (error) {

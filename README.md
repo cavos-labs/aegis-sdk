@@ -1,583 +1,271 @@
 # Aegis SDK
 
-A comprehensive SDK for Starknet wallet functionality with automatic account management, gasless transactions, and built-in analytics tracking. Perfect for developers who want to integrate seamless wallet experiences without blockchain complexity.
+Simple SDK for Starknet wallets with gasless transactions.
 
-Reffer to https://aegis.cavos.xyz to get your App Id.
-
-## Key Features
-
-- 🔐 **Automatic Account Management**: Accounts are saved and loaded automatically between sessions
-- ⛽ **Gasless Transactions**: AVNU paymaster integration for seamless user experience
-- 📊 **Built-in Analytics**: Automatic tracking of wallet deployments and transactions
-- 🏗️ **Account Abstraction**: Smart contract accounts with automatic deployment
-- 🔗 **Multi-Network Support**: Mainnet, Sepolia testnet, and local devnet
-- 💰 **Asset Queries**: ETH, ERC-20, and ERC-721 balance and asset management
-- 🔄 **Fire-and-Forget Tracking**: Zero performance impact analytics
+Get your App ID at: https://aegis.cavos.xyz
 
 ## Installation
 
 ```bash
-npm install @cavos/aegis-sdk
+npm install @cavos/aegis
 ```
 
 ## Quick Start
 
-### Initialize the SDK
+### React Native / Expo (Recommended)
+
+```typescript
+// 1. Setup the provider in your app root (_layout.tsx)
+import { AegisProvider } from '@cavos/aegis/contexts/AegisProvider';
+
+export default function App() {
+  return (
+    <AegisProvider
+      config={{
+        network: 'SN_SEPOLIA',
+        appName: 'MyApp',
+        appId: 'your-unique-app-id',
+        paymasterApiKey: 'your-avnu-api-key',
+        enableLogging: true
+      }}
+    >
+      {/* Your app */}
+    </AegisProvider>
+  );
+}
+
+// 2. Use in any component
+import { useAegis } from '@cavos/aegis-sdk/contexts/AegisProvider';
+
+function WalletButton() {
+  const { isConnected, currentAddress, deployWallet, disconnect } = useAegis();
+
+  if (isConnected) {
+    return (
+      <View>
+        <Text>Connected: {currentAddress}</Text>
+        <Button onPress={disconnect} title="Disconnect" />
+      </View>
+    );
+  }
+
+  return <Button onPress={deployWallet} title="Create Wallet" />;
+}
+```
+
+### Basic SDK Usage
 
 ```typescript
 import { AegisSDK } from '@cavos/aegis-sdk';
 
-// Initialize the SDK (appId is REQUIRED for tracking)
 const sdk = new AegisSDK({
-  network: 'SN_MAINNET', // or 'SN_SEPOLIA', 'SN_DEVNET'
-  appName: 'MyDApp',
-  appId: 'my_unique_app_123', // REQUIRED: Your unique app identifier
-  paymasterApiKey: 'your_avnu_api_key', // For gasless transactions
-  enableLogging: true // Optional: Enable debug logs
+  network: 'SN_SEPOLIA',
+  appName: 'MyApp',
+  appId: 'your-unique-app-id',
+  paymasterApiKey: 'your-avnu-api-key',
+  enableLogging: true
 });
 
-// ✅ If you have a previously stored account, it's automatically connected!
-console.log('Auto-connected:', sdk.isConnected);
-console.log('Account address:', sdk.address);
-```
-
-### Deploy New Account (First Time Users)
-
-```typescript
-// Deploy a new account with gasless deployment
+// Deploy new wallet (generates + deploys + connects)
 const privateKey = await sdk.deployAccount();
+// 🔐 Store this privateKey securely!
 
-console.log('✅ Account deployed successfully!');
-console.log('Private key (save this!):', privateKey);
-console.log('Account address:', sdk.address);
-console.log('Connected:', sdk.isConnected); // true
-
-// ✅ Account is automatically saved and will be loaded next time you initialize the SDK
-// ✅ Deployment is automatically tracked for analytics
+// Or connect with existing key
+await sdk.connectAccount('0x123...your_private_key');
 ```
 
-### Connect with Existing Private Key
+## Core Operations
+
+### Execute Transactions
 
 ```typescript
-// Connect using an existing private key
-const address = await sdk.connectAccount('0x1234...your_private_key');
-
-console.log('✅ Connected to account:', address);
-console.log('Account saved for future sessions');
-
-// ✅ Account is automatically saved for persistence
-// ✅ Connection is tracked for analytics
-```
-
-## Transaction Execution
-
-### Single Transaction
-
-```typescript
-// Execute a single transaction (automatically gasless)
+// Single transaction (gasless)
 const result = await sdk.execute(
   '0x123...contract_address',
-  'transfer', // method name
-  ['0x456...recipient', '1000000000000000000'] // parameters [recipient, amount in wei]
+  'transfer',
+  ['0x456...recipient', '1000000000000000000'] // 1 ETH in wei
 );
 
-console.log('✅ Transaction hash:', result.transactionHash);
-console.log('Status:', result.status); // 'pending', 'confirmed', or 'failed'
+console.log('Transaction:', result.transactionHash);
 
-// ✅ Transaction is automatically tracked for analytics
-// ✅ Zero performance impact - tracking happens in background
-```
-
-### Batch Transactions
-
-```typescript
-// Execute multiple transactions in a single batch
+// Multiple transactions in one batch
 const calls = [
   {
-    contractAddress: '0x123...token_contract',
+    contractAddress: '0x123...token',
     entrypoint: 'approve',
-    calldata: ['0x456...spender', '2000000000000000000'] // 2 tokens
+    calldata: ['0x456...spender', '1000000000000000000']
   },
   {
-    contractAddress: '0x789...dex_contract', 
+    contractAddress: '0x789...dex',
     entrypoint: 'swap',
     calldata: ['0x123...token_in', '0xabc...token_out', '1000000000000000000']
   }
 ];
 
-const result = await sdk.executeBatch(calls);
-
-console.log('✅ Batch transaction hash:', result.transactionHash);
-// ✅ Batch is automatically tracked as single transaction
+const batchResult = await sdk.executeBatch(calls);
 ```
 
-### Transaction Options
+### Check Balances
 
 ```typescript
-// Advanced transaction options
-const options = {
-  usePaymaster: true,    // Use gasless transactions (default: true)
-  retries: 3,           // Retry attempts (default: 3)
-  timeout: 60000,       // Timeout in ms (default: 60000)
-  maxFee: '1000000000000000', // Max fee in wei
-};
-
-const result = await sdk.execute(
-  '0x123...contract',
-  'method_name',
-  ['param1', 'param2'],
-  options
-);
-```
-
-## Reading Blockchain Data
-
-### Balance Queries
-
-```typescript
-// Get ETH balance for current account
+// ETH balance
 const ethBalance = await sdk.getETHBalance();
-console.log('ETH Balance:', ethBalance, 'ETH');
+console.log('ETH:', ethBalance);
 
-// Get ETH balance for any address
-const otherEthBalance = await sdk.getETHBalance('0x123...other_address');
-
-// Get ERC-20 token balance
+// Token balance
 const tokenBalance = await sdk.getTokenBalance(
-  '0x123...token_contract',
-  18, // token decimals
-  sdk.address // optional: address to check (defaults to current account)
+  '0x123...token_address',
+  18 // decimals
 );
-console.log('Token Balance:', tokenBalance);
+console.log('Tokens:', tokenBalance);
 
-// Get NFTs owned by current account
+// NFTs
 const nfts = await sdk.getNFTs('0x123...nft_contract');
-console.log('NFTs:', nfts);
 ```
 
-### Contract Calls (Read-Only)
+### Read Contract Data
 
 ```typescript
-// Call any contract view function (automatically handles Cairo version detection)
+// Call any contract function
 const result = await sdk.call(
-  '0x123...contract_address',
-  'balanceOf', // method name
-  [sdk.address] // parameters
-);
-console.log('Balance from contract call:', result);
-
-// Call with multiple parameters
-const allowance = await sdk.call(
-  '0x123...token_contract',
-  'allowance',
-  [sdk.address, '0x456...spender_address']
-);
-
-// Optional: Provide ABI for better type safety and error handling
-const contractABI = [
-  {
-    name: 'balanceOf',
-    type: 'function',
-    inputs: [{ name: 'account', type: 'felt' }],
-    outputs: [{ name: 'balance', type: 'Uint256' }]
-  }
-  // ... rest of your contract ABI
-];
-
-const resultWithABI = await sdk.call(
-  '0x123...contract_address',
+  '0x123...contract',
   'balanceOf',
-  [sdk.address],
-  contractABI // Optional: Contract ABI for better type safety
+  [sdk.address]
 );
 ```
 
 ## Account Management
 
-### Check Connection Status
-
 ```typescript
-// Check if account is connected
-console.log('Connected:', sdk.isConnected); // boolean
+// Check connection
+console.log('Connected:', sdk.isConnected);
+console.log('Address:', sdk.address);
 
-// Get current account address
-console.log('Address:', sdk.address); // string | null
+// Generate new private key
+const newKey = sdk.generateAccount();
 
-// The SDK automatically loads saved accounts on initialization
-```
+// Connect account
+await sdk.connectAccount(privateKey);
 
-### Export Private Key
+// Deploy account
+await sdk.deployAccount();
 
-```typescript
-// Export private key for current account
-const privateKey = await sdk.exportPrivateKey();
-if (privateKey) {
-  console.log('Private key:', privateKey);
-  // ⚠️ Keep this secure! Never share or log in production
-}
-```
-
-### Multiple Accounts
-
-```typescript
-// Get all stored accounts for your app
-const storedAccounts = await sdk.getStoredAccounts();
-console.log('All stored accounts:', storedAccounts);
-
-// Connect to a specific stored account
-// (This automatically happens when you call connectAccount with a private key)
-```
-
-### Disconnect Account
-
-```typescript
-// Disconnect current account (doesn't delete stored account)
+// Disconnect
 sdk.disconnect();
-console.log('Connected:', sdk.isConnected); // false
-
-// Account remains stored and will auto-connect next time you initialize the SDK
 ```
 
-## Network Management
-
-### Switch Networks
-
-```typescript
-// Switch to different network
-await sdk.switchNetwork('SN_SEPOLIA');
-console.log('Switched to Sepolia testnet');
-
-// Switch with custom RPC URL
-await sdk.switchNetwork('SN_MAINNET', 'https://my-custom-rpc.com');
-```
-
-## Utility Functions
-
-### Transaction Status
-
-```typescript
-// Wait for transaction confirmation
-const isConfirmed = await sdk.waitForTransaction('0x123...tx_hash');
-console.log('Transaction confirmed:', isConfirmed);
-
-// Check transaction status
-const status = await sdk.getTransactionStatus('0x123...tx_hash');
-console.log('Status:', status); // 'pending', 'confirmed', or 'failed'
-
-// Estimate gas for transaction
-const gasEstimate = await sdk.estimateGas(
-  '0x123...contract',
-  'method_name', 
-  ['param1', 'param2']
-);
-console.log('Estimated gas:', gasEstimate);
-```
-
-### Convenience Methods
-
-```typescript
-// Transfer ETH
-const result = await sdk.transferETH(
-  '0x456...recipient',
-  '1000000000000000000' // 1 ETH in wei
-);
-
-// Transfer ERC-20 tokens
-const tokenResult = await sdk.transferToken(
-  '0x123...token_contract',
-  '0x456...recipient',
-  '100', // amount in token units (not wei)
-  18 // token decimals
-);
-
-// Approve token spending
-const approveResult = await sdk.approveToken(
-  '0x123...token_contract',
-  '0x456...spender',
-  '1000', // amount in token units
-  18 // token decimals
-);
-```
-
-### Utility Functions
-
-The SDK provides utility functions for handling Starknet-specific data types:
-
-```typescript
-import { parseUint256, formatTokenBalance, parseTokenAmount, formatDisplayBalance } from '@cavos/aegis-sdk';
-
-// Parse Uint256 values from contract responses
-const uint256Value = parseUint256(['0x64', '0x0']); // Handles [low, high] format
-const singleValue = parseUint256('0x64'); // Handles single values
-const commaValue = parseUint256('0x64,0x0'); // Handles comma-separated format
-
-// Format token balances
-const balance = formatTokenBalance(1000000000000000000n, 18); // "1"
-const displayBalance = formatDisplayBalance("1.23456789", 4); // "1.2346"
-
-// Convert amounts for transactions
-const weiAmount = parseTokenAmount("1.5", 18); // 1500000000000000000n
-```
-
-## Configuration Options
+## Configuration
 
 ```typescript
 interface WalletConfig {
   network: 'SN_MAINNET' | 'SN_SEPOLIA' | 'SN_DEVNET';
-  appName: string;                    // Your app name for account storage
-  appId: string;                      // REQUIRED: Unique app identifier for tracking
-  
-  // Optional configurations
-  rpcUrl?: string;                    // Custom RPC URL
-  paymasterApiKey?: string;           // AVNU paymaster API key for gasless transactions
-  paymasterBackendUrl?: string;       // Custom paymaster backend URL
-  trackingApiUrl?: string;            // Custom tracking API URL (default: https://services.cavos.xyz)
-  trackingTimeout?: number;           // Tracking request timeout in ms (default: 5000)
-  maxRetries?: number;                // Transaction retry attempts (default: 3)
-  batchSize?: number;                // Batch size limit (default: 100)
-  enableLogging?: boolean;            // Enable debug logs (default: false)
+  appName: string;
+  appId: string; // Required: Get from https://aegis.cavos.xyz
+
+  // Optional
+  paymasterApiKey?: string;        // For gasless transactions
+  rpcUrl?: string;                 // Custom RPC
+  enableLogging?: boolean;         // Debug logs (default: false)
+  maxRetries?: number;             // Transaction retries (default: 3)
+  trackingApiUrl?: string;         // Custom analytics URL
 }
 ```
 
-## Built-in Analytics & Tracking
+## Key Storage (Important!)
 
-The SDK automatically tracks wallet deployments and transactions to `https://services.cavos.xyz` for analytics:
+**The SDK does NOT store private keys.** You must handle storage:
 
-### What's Tracked
-
-✅ **Wallet Deployments**: When new accounts are deployed
-- App ID, wallet address, network, public key
-- Helps track user acquisition and network usage
-
-✅ **Transaction Executions**: When transactions are executed
-- App ID, transaction hash, network
-- Helps track user engagement and transaction volume
-
-### Tracking Features
-
-- 🔥 **Fire-and-Forget**: Zero performance impact on your app
-- 🚫 **No Blocking**: Tracking failures never affect wallet operations
-- 🔒 **Privacy-First**: No private keys or personal data transmitted
-- ⚡ **5-Second Timeout**: Fast timeout prevents hanging requests
-- 📊 **Automatic**: No additional code required
-
-### Data Transmitted
-
+### React Native/Expo (use provided context)
 ```typescript
-// Wallet deployment tracking
-{
-  app_id: "your_app_123",
-  address: "0x1234...wallet_address",
-  network: "mainnet" | "sepolia",
-  public_key: "0x5678...public_key" // derived from blockchain data
+// Uses expo-secure-store automatically
+<AegisProvider config={...}>
+  {/* Your app */}
+</AegisProvider>
+```
+
+### Manual Storage
+```typescript
+// Example with expo-secure-store
+import * as SecureStore from 'expo-secure-store';
+
+// Store
+await SecureStore.setItemAsync('wallet_key', privateKey);
+
+// Load
+const privateKey = await SecureStore.getItemAsync('wallet_key');
+if (privateKey) {
+  await sdk.connectAccount(privateKey);
 }
 
-// Transaction tracking  
-{
-  app_id: "your_app_123",
-  transaction_hash: "0x9abc...tx_hash",
-  network: "mainnet" | "sepolia"
-}
+// Remove
+await SecureStore.deleteItemAsync('wallet_key');
 ```
 
-## Account Persistence
-
-The SDK automatically handles account persistence:
-
-### How It Works
-
-1. **First Time**: Deploy or connect an account
-   ```typescript
-   const sdk = new AegisSDK({ appId: 'my_app', appName: 'MyApp', network: 'SN_MAINNET' });
-   const privateKey = await sdk.deployAccount(); // Account is saved automatically
-   ```
-
-2. **Subsequent Sessions**: Account loads automatically
-   ```typescript
-   const sdk = new AegisSDK({ appId: 'my_app', appName: 'MyApp', network: 'SN_MAINNET' });
-   // SDK automatically connects to your saved account
-   console.log('Connected:', sdk.isConnected); // true (if account was saved)
-   console.log('Address:', sdk.address); // your wallet address
-   ```
-
-### Storage Details
-
-- **Web**: Encrypted localStorage with app-specific keys
-- **Mobile**: Device secure storage (Keychain/Keystore)
-- **Isolation**: Each app has isolated account storage
-- **Security**: Private keys never leave the device unencrypted
-
-## Error Handling & Troubleshooting
-
-### Common Error Types
-
-```typescript
-import { NetworkError, ValidationError, ExecutionError, DeploymentError } from '@cavos/aegis-sdk';
-
-try {
-  await sdk.execute('0x123...', 'transfer', ['0x456...', '1000']);
-} catch (error) {
-  if (error instanceof NetworkError) {
-    console.error('Network issue:', error.message);
-    // Handle connectivity problems
-  } else if (error instanceof ValidationError) {
-    console.error('Invalid input:', error.message);
-    // Handle validation errors
-  } else if (error instanceof ExecutionError) {
-    console.error('Transaction failed:', error.message);
-    // Handle transaction failures
-  } else if (error instanceof DeploymentError) {
-    console.error('Deployment failed:', error.message);
-    // Handle account deployment issues
-  }
-}
-```
-
-### Common Issues & Solutions
-
-#### "Unable to determine Cairo version" Error
-**Fixed in latest version** - The SDK now automatically handles Cairo version detection for contract calls.
-
-```typescript
-// ✅ This now works without errors
-const result = await sdk.call('0x123...', 'balanceOf', [address]);
-
-// ✅ Optional: Provide ABI for better error handling
-const result = await sdk.call('0x123...', 'balanceOf', [address], contractABI);
-```
-
-#### "Cannot convert 0x0,0x0 to a BigInt" Error
-**Fixed in latest version** - The SDK now properly handles Uint256 values from Starknet contracts.
-
-```typescript
-// ✅ These now work correctly with Uint256 responses
-const ethBalance = await sdk.getETHBalance();
-const tokenBalance = await sdk.getTokenBalance('0x123...token');
-
-// ✅ Contract calls that return Uint256 values are handled automatically
-const balance = await sdk.call('0x123...', 'balanceOf', [address]);
-```
-
-#### Contract Call Failures
-If you're still experiencing contract call issues:
+## Error Handling
 
 ```typescript
 try {
-  // Method 1: Basic call (recommended)
-  const result = await sdk.call(contractAddress, method, args);
-} catch (error) {
-  console.log('Basic call failed, trying with ABI...');
-  
-  // Method 2: With contract ABI
-  const result = await sdk.call(contractAddress, method, args, contractABI);
-}
-```
-
-#### Account Not Connected
-```typescript
-// Always check connection before operations
-if (!sdk.isConnected) {
-  console.log('No account connected. Please connect or deploy an account.');
-  // Deploy new account or connect existing one
-  const privateKey = await sdk.deployAccount();
-  // Account is now connected automatically
-}
-```
-
-#### Transaction Failures
-```typescript
-try {
-  const result = await sdk.execute(contractAddress, method, args);
-  console.log('Success:', result.transactionHash);
+  const result = await sdk.execute(contract, method, params);
 } catch (error) {
   if (error.message.includes('insufficient')) {
-    console.log('Insufficient balance or allowance');
+    console.log('Not enough balance');
   } else if (error.message.includes('nonce')) {
-    console.log('Nonce issue - transaction may have been sent already');
+    console.log('Transaction already sent');
   } else {
     console.log('Transaction failed:', error.message);
   }
 }
 ```
 
-## Best Practices
+## Utilities
 
-### 1. Secure Private Key Handling
 ```typescript
-// ✅ Good: Let SDK handle private keys
-const privateKey = await sdk.deployAccount();
-// Store this securely (SDK does this automatically)
+// Wait for transaction
+const confirmed = await sdk.waitForTransaction(txHash);
 
-// ❌ Bad: Don't log private keys in production
-console.log(privateKey); // Only for development
+// Check transaction status
+const status = await sdk.getTransactionStatus(txHash); // 'pending', 'confirmed', 'failed'
+
+// Estimate gas
+const gasEstimate = await sdk.estimateGas(contract, method, params);
+
+// Switch networks
+await sdk.switchNetwork('SN_MAINNET');
 ```
 
-### 2. Error Handling
-```typescript
-// ✅ Good: Always handle errors
-try {
-  const result = await sdk.execute(...);
-  console.log('Success:', result.transactionHash);
-} catch (error) {
-  console.error('Transaction failed:', error);
-  // Show user-friendly error message
-}
-```
+## Analytics
 
-### 3. Connection Checking
-```typescript
-// ✅ Good: Check connection before operations
-if (!sdk.isConnected) {
-  console.log('Please connect or deploy an account first');
-  return;
-}
-
-const result = await sdk.execute(...);
-```
-
-### 4. Batch Operations
-```typescript
-// ✅ Good: Batch related transactions
-const calls = [
-  { contractAddress: token, entrypoint: 'approve', calldata: [spender, amount] },
-  { contractAddress: dex, entrypoint: 'swap', calldata: [token_in, token_out, amount] }
-];
-await sdk.executeBatch(calls);
-
-// ❌ Less efficient: Separate transactions
-await sdk.execute(token, 'approve', [spender, amount]);
-await sdk.execute(dex, 'swap', [token_in, token_out, amount]);
-```
+The SDK automatically tracks:
+- ✅ Wallet deployments
+- ✅ Transaction executions
+- 🔒 No private data transmitted
+- ⚡ Zero performance impact
 
 ## Platform Support
 
-- ✅ **Node.js** 16+ (backend/scripts)
-- ✅ **Modern Browsers** (Chrome, Firefox, Safari, Edge)
-- ✅ **React** 16.8+ (hooks required)
-- ✅ **React Native** 0.70+ 
-- ✅ **Expo** SDK 49+
-- ✅ **TypeScript** Full type support
+- ✅ React Native / Expo
+- ✅ Node.js
+- ✅ Modern browsers
+- ✅ Full TypeScript support
 
 ## Security
 
-- 🔐 Private keys stored in device secure storage
-- 🚫 Keys never transmitted unencrypted
-- ✅ Client-side transaction signing
-- ✅ Industry-standard cryptographic libraries
-- 🔒 App-isolated account storage
-- 📊 Privacy-first analytics (no personal data)
+- 🔐 Client-side signing only
+- 🚫 Private keys never transmitted
+- ✅ Secure storage on device
+- 📊 Privacy-first analytics
 
-## Support & Resources
+## Support
 
-- 📖 **Documentation**: [Full API Documentation (outdated)](https://docs.cavos.xyz/)
-- 🐛 **Issues**: [GitHub Issues](https://github.com/cavos-labs/aegis-sdk/issues)
-- 💬 **Discord**: [Community Support](https://discord.gg/Vvq2ekEV47)
-- 📧 **Email**: adrianvrj@cavos.xyz
+- 📖 Documentation: [docs.cavos.xyz](https://docs.cavos.xyz/)
+- 🐛 Issues: [GitHub](https://github.com/cavos-labs/aegis-sdk/issues)
+- 💬 Discord: [Community](https://discord.gg/Vvq2ekEV47)
+- 📧 Email: adrianvrj@cavos.xyz
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) file for details.
+MIT License
 
 ---
 
-**Ready to get started?** Initialize the SDK with your `appId` and start building! 🚀
+**Get started:** Grab your App ID from [aegis.cavos.xyz](https://aegis.cavos.xyz) and start building! 🚀

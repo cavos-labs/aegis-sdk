@@ -7,10 +7,12 @@ import { PaymasterConfig, ExecutionError, NetworkError, NetworkType } from '../t
 export class PaymasterIntegration {
   private network: NetworkManager;
   private config: PaymasterConfig;
+  private enableLogging: boolean;
 
-  constructor(network: NetworkManager, config: PaymasterConfig) {
+  constructor(network: NetworkManager, config: PaymasterConfig, enableLogging: boolean = false) {
     this.network = network;
     this.config = config;
+    this.enableLogging = enableLogging;
   }
 
   isAvailable(): boolean {
@@ -200,10 +202,14 @@ export class PaymasterIntegration {
     } catch (error) {
       // If preferred method fails, try the other one as fallback
       if (useAVNU && this.config.backendUrl) {
-        console.warn('AVNU paymaster failed, trying backend fallback...');
+        if (this.enableLogging) {
+          console.warn('AVNU paymaster failed, trying backend fallback...');
+        }
         return await this.executeWithBackend(account, calls, deploymentData);
       } else if (useBackend && this.config.apiKey) {
-        console.warn('Backend paymaster failed, trying AVNU fallback...');
+        if (this.enableLogging) {
+          console.warn('Backend paymaster failed, trying AVNU fallback...');
+        }
         return await this.executeWithAVNU(account, calls, deploymentData);
       }
       
@@ -255,7 +261,9 @@ export class PaymasterIntegration {
         });
         
         if (!testResponse.ok) {
-          console.warn('AVNU API key validation failed');
+          if (this.enableLogging) {
+            console.warn('AVNU API key validation failed');
+          }
         }
       }
 
@@ -263,13 +271,17 @@ export class PaymasterIntegration {
       if (this.config.backendUrl) {
         const healthResponse = await fetch(`${this.config.backendUrl}/health`);
         if (!healthResponse.ok) {
-          console.warn('Backend paymaster health check failed');
+          if (this.enableLogging) {
+            console.warn('Backend paymaster health check failed');
+          }
         }
       }
 
       return true;
     } catch (error) {
-      console.error('Paymaster configuration validation failed:', error);
+      if (this.enableLogging) {
+        console.error('Paymaster configuration validation failed:', error);
+      }
       return false;
     }
   }
