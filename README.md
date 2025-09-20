@@ -16,7 +16,7 @@ npm install @cavos/aegis
 
 ```typescript
 // 1. Setup the provider in your app root (_layout.tsx)
-import { AegisProvider } from '@cavos/aegis/contexts/AegisProvider';
+import { AegisProvider } from '@cavos/aegis';
 
 export default function App() {
   return (
@@ -35,7 +35,7 @@ export default function App() {
 }
 
 // 2. Use in any component
-import { useAegis } from '@cavos/aegis-sdk/contexts/AegisProvider';
+import { useAegis } from '@cavos/aegis';
 
 function WalletButton() {
   const { isConnected, currentAddress, deployWallet, disconnect } = useAegis();
@@ -56,7 +56,7 @@ function WalletButton() {
 ### Basic SDK Usage
 
 ```typescript
-import { AegisSDK } from '@cavos/aegis-sdk';
+import { AegisSDK } from '@cavos/aegis';
 
 const sdk = new AegisSDK({
   network: 'SN_SEPOLIA',

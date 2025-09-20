@@ -5,6 +5,9 @@ export { AegisSDK } from './core/aegis-sdk';
 export * from './types';
 export * from './context/wallet-context';
 
+// React Native Context Provider (Expo compatible)
+export { AegisProvider, useAegis } from './contexts/AegisProvider';
+
 // Core utilities
 export { CryptoUtils } from './core/crypto';
 export { SecureStorage } from './storage/secure-storage';
