@@ -32,7 +32,13 @@ export const AegisProvider: React.FC<AegisProviderProps> = ({
   children,
   config
 }) => {
-  const [aegisAccount] = useState(() => new AegisSDK(config));
+  // Use default AVNU API key if not provided
+  const configWithDefaults = {
+    ...config,
+    paymasterApiKey: config.paymasterApiKey || 'c37c52b7-ea5a-4426-8121-329a78354b0b'
+  };
+
+  const [aegisAccount] = useState(() => new AegisSDK(configWithDefaults));
   const [isConnected, setIsConnected] = useState(false);
   const [currentAddress, setCurrentAddress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
