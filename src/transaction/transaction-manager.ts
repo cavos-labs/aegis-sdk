@@ -1,7 +1,8 @@
 import { Account, Call } from 'starknet';
 import { PaymasterIntegration } from './paymaster';
 import { NetworkManager } from '../network/network-manager';
-import { TransactionResult, ExecutionOptions, ExecutionError, NetworkError } from '../types';
+import { TransactionResult, ExecutionOptions, ExecutionError, NetworkError, SocialWalletData, AuthenticationError } from '../types';
+import { SocialAuthManager } from '../auth/social-auth-manager';
 
 interface QueuedTransaction {
   id: string;
@@ -21,6 +22,8 @@ export class TransactionManager {
   private batchSize: number;
   private maxRetries: number;
   private enableLogging: boolean;
+  private socialAuthManager: SocialAuthManager | null = null;
+  private currentSocialWallet: SocialWalletData | null = null;
 
   constructor(
     network: NetworkManager,
@@ -34,6 +37,14 @@ export class TransactionManager {
     this.batchSize = batchSize;
     this.maxRetries = maxRetries;
     this.enableLogging = enableLogging;
+  }
+
+  setSocialAuthManager(socialAuthManager: SocialAuthManager): void {
+    this.socialAuthManager = socialAuthManager;
+  }
+
+  setSocialWallet(socialWallet: SocialWalletData | null): void {
+    this.currentSocialWallet = socialWallet;
   }
 
   setAccount(account: Account | null): void {
@@ -52,12 +63,29 @@ export class TransactionManager {
     calls: Call[],
     options: ExecutionOptions = {}
   ): Promise<TransactionResult> {
-    if (!this.account) {
-      throw new ExecutionError('No account connected');
-    }
-
     if (!calls || calls.length === 0) {
       throw new ExecutionError('No calls provided for transaction');
+    }
+
+    // Check if we're in social login mode
+    if (this.isSocialLoginMode()) {
+      return this.executeSocialTransaction(calls, options);
+    }
+
+    // In-app wallet mode (existing behavior)
+    return this.executeInAppTransaction(calls, options);
+  }
+
+  private isSocialLoginMode(): boolean {
+    return this.currentSocialWallet !== null && this.socialAuthManager !== null;
+  }
+
+  private async executeInAppTransaction(
+    calls: Call[],
+    options: ExecutionOptions = {}
+  ): Promise<TransactionResult> {
+    if (!this.account) {
+      throw new ExecutionError('No account connected');
     }
 
     const usePaymaster = options.usePaymaster !== false && this.paymaster.isAvailable();
@@ -84,6 +112,78 @@ export class TransactionManager {
         };
       } catch (error) {
         throw new ExecutionError(`Transaction execution failed: ${error}`);
+      }
+    };
+
+    if (retries > 0) {
+      return this.executeWithRetries(executeFunction, retries, options.timeout);
+    } else {
+      return executeFunction();
+    }
+  }
+
+  private async executeSocialTransaction(
+    calls: Call[],
+    options: ExecutionOptions = {}
+  ): Promise<TransactionResult> {
+    if (!this.socialAuthManager || !this.currentSocialWallet) {
+      throw new ExecutionError('Social login not configured or no social wallet connected');
+    }
+
+    const retries = options.retries || this.maxRetries;
+
+    const executeFunction = async (): Promise<TransactionResult> => {
+      try {
+        // Get valid access token (with automatic refresh if needed)
+        const accessToken = await this.socialAuthManager!.getValidAccessToken();
+
+        // Prepare the request to cavos-wallet-provider
+        const baseUrl = this.socialAuthManager!.baseUrl;
+        const response = await fetch(`${baseUrl}/api/v1/external/execute/session`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            address: this.currentSocialWallet!.wallet.address,
+            org_id: this.currentSocialWallet!.organization.org_id,
+            calls: calls,
+            network: this.currentSocialWallet!.wallet.network
+          }),
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new ExecutionError(`Social transaction failed: ${response.status} ${errorText}`);
+        }
+
+        const result = await response.json();
+
+        if (result.error) {
+          throw new ExecutionError(`Social transaction failed: ${result.error}`);
+        }
+
+        // Extract transaction hash from cavos-wallet-provider response format
+        const transactionHash = result.result?.result?.transactionHash || result.result?.transactionHash;
+
+        if (!transactionHash) {
+          throw new ExecutionError('No transaction hash returned from social login execution');
+        }
+
+        if (this.enableLogging) {
+          console.log('[TransactionManager] Social transaction executed:', transactionHash);
+        }
+
+        return {
+          transactionHash,
+          status: 'pending',
+        };
+      } catch (error) {
+        if (error instanceof AuthenticationError) {
+          throw error; // Re-throw authentication errors as-is
+        }
+        throw new ExecutionError(`Social transaction execution failed: ${error}`);
       }
     };
 

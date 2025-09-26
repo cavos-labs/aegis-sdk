@@ -1,6 +1,10 @@
 # Aegis SDK
 
-Simple SDK for Starknet wallets with gasless transactions.
+Simple SDK for Starknet wallets with support for **OAuth (Apple/Google)**, **Email/Password**, and **In-app wallets**.
+
+React and React Native compatible.
+
+One single package for everything.
 
 Get your App ID at: https://aegis.cavos.xyz
 
@@ -10,85 +14,163 @@ Get your App ID at: https://aegis.cavos.xyz
 npm install @cavos/aegis
 ```
 
-## Quick Start
+## Quick Start - Choose Your Authentication
 
-### React Native / Expo (Recommended)
+### 🍎 OAuth Login (Apple/Google)
+
+**Perfect for:** Consumer apps, social authentication, best UX
 
 ```typescript
-// 1. Setup the provider in your app root (_layout.tsx)
-import { AegisProvider } from '@cavos/aegis';
+import { AegisSDK } from '@cavos/aegis';
+import { openAuthSessionAsync } from 'expo-web-browser';
 
-export default function App() {
-  return (
-    <AegisProvider
-      config={{
-        network: 'SN_SEPOLIA',
-        appName: 'MyApp',
-        appId: 'your-unique-app-id',
-        paymasterApiKey: 'your-avnu-api-key',
-        enableLogging: true
-      }}
-    >
-      {/* Your app */}
-    </AegisProvider>
-  );
-}
+const aegis = new AegisSDK({
+  network: 'sepolia',
+  appId: 'your-cavos-app-id',
+  enableLogging: true
+});
 
-// 2. Use in any component
-import { useAegis } from '@cavos/aegis';
+// Step 1: Get OAuth URL
+const appleUrl = await aegis.getAppleOAuthUrl('exp://192.168.1.16:8081');
+const googleUrl = await aegis.getGoogleOAuthUrl('exp://192.168.1.16:8081');
 
-function WalletButton() {
-  const { isConnected, currentAddress, deployWallet, disconnect } = useAegis();
+// Step 2: Open URL your way
+const result = await openAuthSessionAsync(appleUrl, 'exp://192.168.1.16:8081');
 
-  if (isConnected) {
-    return (
-      <View>
-        <Text>Connected: {currentAddress}</Text>
-        <Button onPress={disconnect} title="Disconnect" />
-      </View>
-    );
-  }
+// Step 3: Handle callback to connect account
+await aegis.handleOAuthCallback(result);
 
-  return <Button onPress={deployWallet} title="Create Wallet" />;
-}
+// Done! Use your connected wallet
+console.log('Connected!', aegis.getWalletStatus());
+await aegis.execute('0x123...', 'transfer', ['0x456...', '1000']);
 ```
 
-### Basic SDK Usage
+### 📧 Email/Password Login
+
+**Perfect for:** Simple authentication, no external OAuth
 
 ```typescript
 import { AegisSDK } from '@cavos/aegis';
 
-const sdk = new AegisSDK({
-  network: 'SN_SEPOLIA',
-  appName: 'MyApp',
-  appId: 'your-unique-app-id',
-  paymasterApiKey: 'your-avnu-api-key',
+const aegis = new AegisSDK({
+  network: 'sepolia',
+  appId: 'your-cavos-app-id',
   enableLogging: true
 });
 
-// Deploy new wallet (generates + deploys + connects)
-const privateKey = await sdk.deployAccount();
-// 🔐 Store this privateKey securely!
+// Sign up new user
+await aegis.signUp('user@example.com', 'password123');
 
-// Or connect with existing key
-await sdk.connectAccount('0x123...your_private_key');
+// Or sign in existing user
+await aegis.signIn('user@example.com', 'password123');
+
+// Use your connected wallet
+await aegis.execute('0x123...', 'transfer', ['0x456...', '1000']);
+
+// Sign out when done
+await aegis.signOut();
 ```
 
-## Core Operations
+### 🏠 In-App Wallets (Self-Custody)
 
-### Execute Transactions
+**Perfect for:** DeFi, power users, full control
 
 ```typescript
-// Single transaction (gasless)
-const result = await sdk.execute(
-  '0x123...contract_address',
+import { AegisSDK } from '@cavos/aegis';
+
+const aegis = new AegisSDK({
+  network: 'sepolia',
+  appId: 'your-app-id',
+  paymasterApiKey: 'your-avnu-api-key', // For gasless deployment
+  enableLogging: true
+});
+
+// Create new wallet
+const privateKey = await aegis.deployAccount();
+console.log('Save this key securely:', privateKey);
+
+// Or connect existing wallet
+await aegis.connectAccount('your-existing-private-key');
+
+// Use your wallet
+await aegis.execute('0x123...', 'transfer', ['0x456...', '1000']);
+```
+
+## 🔄 Multi-Wallet Support
+
+Use both social and in-app wallets in the same app:
+
+```typescript
+const aegis = new AegisSDK({
+  network: 'sepolia',
+  appId: 'your-cavos-app-id'
+  // No walletMode needed - both types available!
+});
+
+// Use OAuth
+const appleUrl = await aegis.getAppleOAuthUrl('exp://192.168.1.16:8081');
+const result = await openAuthSessionAsync(appleUrl, 'exp://192.168.1.16:8081');
+await aegis.handleOAuthCallback(result);
+
+// Or use email/password
+await aegis.signIn('user@example.com', 'password');
+
+// Or use in-app wallet
+await aegis.connectAccount('private-key');
+
+// Check what's connected
+const status = aegis.getWalletStatus();
+console.log('Active wallet:', status.activeWalletType); // 'social' or 'in-app'
+console.log('Social wallet:', status.social.address);
+console.log('In-app wallet:', status.inApp.address);
+```
+
+## 📱 OAuth Browser Opening Methods
+
+### Expo WebBrowser (Recommended)
+```typescript
+import { openAuthSessionAsync } from 'expo-web-browser';
+
+const url = await aegis.getAppleOAuthUrl('exp://192.168.1.16:8081');
+const result = await openAuthSessionAsync(url, 'exp://192.168.1.16:8081');
+await aegis.handleOAuthCallback(result);
+```
+
+### React Native Linking
+```typescript
+import { Linking } from 'react-native';
+
+const url = await aegis.getAppleOAuthUrl('yourapp://oauth-callback');
+await Linking.openURL(url);
+
+// Handle deep link callback
+const handleDeepLink = async (callbackUrl) => {
+  await aegis.handleOAuthCallback(callbackUrl);
+};
+```
+
+### Web Browser
+```typescript
+const url = await aegis.getAppleOAuthUrl('https://yourapp.com/callback');
+window.location.href = url;
+
+// On callback page
+await aegis.handleOAuthCallback(window.location.href);
+```
+
+## 💰 Transaction Examples
+
+All authentication methods use the same transaction API:
+
+```typescript
+// Single transaction
+const result = await aegis.execute(
+  '0x123...contract',
   'transfer',
-  ['0x456...recipient', '1000000000000000000'] // 1 ETH in wei
+  ['0x456...recipient', '1000000000000000000']
 );
 
-console.log('Transaction:', result.transactionHash);
-
-// Multiple transactions in one batch
+// Batch transactions
 const calls = [
   {
     contractAddress: '0x123...token',
@@ -98,174 +180,181 @@ const calls = [
   {
     contractAddress: '0x789...dex',
     entrypoint: 'swap',
-    calldata: ['0x123...token_in', '0xabc...token_out', '1000000000000000000']
+    calldata: ['0x123...', '0xabc...', '1000000000000000000']
   }
 ];
+const batchResult = await aegis.executeBatch(calls);
 
-const batchResult = await sdk.executeBatch(calls);
+// Check balances
+const ethBalance = await aegis.getETHBalance();
+const tokenBalance = await aegis.getTokenBalance('0x123...', 18);
+const nfts = await aegis.getNFTs('0x123...');
+
+// Read contract data
+const result = await aegis.call('0x123...', 'balanceOf', [aegis.address]);
 ```
 
-### Check Balances
-
-```typescript
-// ETH balance
-const ethBalance = await sdk.getETHBalance();
-console.log('ETH:', ethBalance);
-
-// Token balance
-const tokenBalance = await sdk.getTokenBalance(
-  '0x123...token_address',
-  18 // decimals
-);
-console.log('Tokens:', tokenBalance);
-
-// NFTs
-const nfts = await sdk.getNFTs('0x123...nft_contract');
-```
-
-### Read Contract Data
-
-```typescript
-// Call any contract function
-const result = await sdk.call(
-  '0x123...contract',
-  'balanceOf',
-  [sdk.address]
-);
-```
-
-## Account Management
-
-```typescript
-// Check connection
-console.log('Connected:', sdk.isConnected);
-console.log('Address:', sdk.address);
-
-// Generate new private key
-const newKey = sdk.generateAccount();
-
-// Connect account
-await sdk.connectAccount(privateKey);
-
-// Deploy account
-await sdk.deployAccount();
-
-// Disconnect
-sdk.disconnect();
-```
-
-## Configuration
+## 🔧 Configuration
 
 ```typescript
 interface WalletConfig {
-  network: 'SN_MAINNET' | 'SN_SEPOLIA' | 'SN_DEVNET';
-  appName: string;
-  appId: string; // Required: Get from https://aegis.cavos.xyz
+  network: 'mainnet' | 'sepolia';
+  appId: string; // Get from https://aegis.cavos.xyz
 
   // Optional
-  paymasterApiKey?: string;        // For gasless transactions
-  rpcUrl?: string;                 // Custom RPC
-  enableLogging?: boolean;         // Debug logs (default: false)
-  maxRetries?: number;             // Transaction retries (default: 3)
-  trackingApiUrl?: string;         // Custom analytics URL
+  paymasterApiKey?: string;    // For gasless in-app wallet deployment
+  rpcUrl?: string;             // Custom RPC endpoint
+  enableLogging?: boolean;     // Debug logs
+  maxRetries?: number;         // Transaction retries (default: 3)
+  trackingApiUrl?: string;     // Custom base URL
 }
 ```
 
-## Key Storage (Important!)
+## 📊 Account Management
 
-**The SDK does NOT store private keys.** You must handle storage:
-
-### React Native/Expo (use provided context)
 ```typescript
-// Uses expo-secure-store automatically
-<AegisProvider config={...}>
-  {/* Your app */}
-</AegisProvider>
+// Check connection status
+console.log('Connected:', aegis.isWalletConnected());
+console.log('Active type:', aegis.getActiveWalletType()); // 'social' | 'in-app' | null
+
+// Get wallet details
+const status = aegis.getWalletStatus();
+console.log('Social wallet:', status.social);
+console.log('In-app wallet:', status.inApp);
+
+// Get current address (works with any wallet type)
+console.log('Address:', aegis.address);
+
+// Disconnect wallets
+await aegis.signOut(); // For social wallets
+aegis.disconnect(); // For in-app wallets
+await aegis.disconnectAllWallets(); // Disconnect everything
 ```
 
-### Manual Storage
+## 🔐 Security & Storage
+
+### OAuth & Email/Password
+- ✅ **No key storage needed** - handled automatically
+- 🔐 Authentication tokens managed securely
+- 🚫 Private keys managed server-side by Cavos
+
+### In-App Wallets
+- ⚠️ **You must store private keys securely**
+- 🔐 Client-side signing only
+- 🚫 Private keys never transmitted
+
 ```typescript
-// Example with expo-secure-store
+// Example secure storage (React Native)
 import * as SecureStore from 'expo-secure-store';
 
-// Store
+// Store private key
+const privateKey = await aegis.deployAccount();
 await SecureStore.setItemAsync('wallet_key', privateKey);
 
-// Load
-const privateKey = await SecureStore.getItemAsync('wallet_key');
-if (privateKey) {
-  await sdk.connectAccount(privateKey);
+// Load on app start
+const savedKey = await SecureStore.getItemAsync('wallet_key');
+if (savedKey) {
+  await aegis.connectAccount(savedKey);
 }
-
-// Remove
-await SecureStore.deleteItemAsync('wallet_key');
 ```
 
-## Error Handling
+## 🛠️ Error Handling
 
 ```typescript
 try {
-  const result = await sdk.execute(contract, method, params);
+  // OAuth
+  const url = await aegis.getAppleOAuthUrl('exp://192.168.1.16:8081');
+  const result = await openAuthSessionAsync(url, 'exp://192.168.1.16:8081');
+  await aegis.handleOAuthCallback(result);
+} catch (error) {
+  if (error.message.includes('Social auth manager not initialized')) {
+    console.error('Configure SDK with valid appId');
+  } else if (error.message.includes('OAuth callback parsing failed')) {
+    console.error('Invalid callback data');
+  } else {
+    console.error('OAuth error:', error.message);
+  }
+}
+
+try {
+  // Email/password
+  await aegis.signIn('user@example.com', 'password');
+} catch (error) {
+  if (error.message.includes('Authentication failed')) {
+    console.error('Invalid credentials');
+  } else {
+    console.error('Login error:', error.message);
+  }
+}
+
+try {
+  // Transactions
+  await aegis.execute('0x123...', 'transfer', ['0x456...', '1000']);
 } catch (error) {
   if (error.message.includes('insufficient')) {
-    console.log('Not enough balance');
+    console.error('Not enough balance');
   } else if (error.message.includes('nonce')) {
-    console.log('Transaction already sent');
+    console.error('Transaction already sent');
   } else {
-    console.log('Transaction failed:', error.message);
+    console.error('Transaction failed:', error.message);
   }
 }
 ```
 
-## Utilities
+## 📋 API Reference
 
-```typescript
-// Wait for transaction
-const confirmed = await sdk.waitForTransaction(txHash);
+### Authentication Methods
+- `getAppleOAuthUrl(redirectUri)` - Get Apple OAuth URL
+- `getGoogleOAuthUrl(redirectUri)` - Get Google OAuth URL
+- `handleOAuthCallback(callbackData)` - Process OAuth callback
+- `signUp(email, password)` - Create account with email/password
+- `signIn(email, password)` - Sign in with email/password
+- `signOut()` - Sign out from social authentication
 
-// Check transaction status
-const status = await sdk.getTransactionStatus(txHash); // 'pending', 'confirmed', 'failed'
+### In-App Wallet Methods
+- `generateAccount()` - Generate new private key
+- `deployAccount()` - Deploy new wallet (gasless with paymaster)
+- `connectAccount(privateKey)` - Connect existing wallet
+- `disconnect()` - Disconnect in-app wallet
 
-// Estimate gas
-const gasEstimate = await sdk.estimateGas(contract, method, params);
+### Transaction Methods
+- `execute(contract, method, params)` - Single transaction
+- `executeBatch(calls)` - Batch transactions
+- `call(contract, method, params)` - Read contract data
 
-// Switch networks
-await sdk.switchNetwork('SN_MAINNET');
-```
+### Balance Methods
+- `getETHBalance()` - Get ETH balance
+- `getTokenBalance(address, decimals)` - Get token balance
+- `getNFTs(contractAddress)` - Get NFT tokens
 
-## Analytics
+### Utility Methods
+- `getWalletStatus()` - Get detailed wallet status
+- `getActiveWalletType()` - Get active wallet type
+- `isWalletConnected()` - Check if any wallet connected
+- `disconnectAllWallets()` - Disconnect all wallets
 
-The SDK automatically tracks:
-- ✅ Wallet deployments
-- ✅ Transaction executions
-- 🔒 No private data transmitted
-- ⚡ Zero performance impact
+## 🌐 Platform Support
 
-## Platform Support
+- ✅ **React Native / Expo** - Full support
+- ✅ **Web browsers** - Full support
+- ✅ **Node.js** - Server-side support
+- ✅ **TypeScript** - Full type safety
 
-- ✅ React Native / Expo
-- ✅ Node.js
-- ✅ Modern browsers
-- ✅ Full TypeScript support
+## 📖 More Resources
 
-## Security
+- **Dashboard:** [aegis.cavos.xyz](https://aegis.cavos.xyz) - Get your App ID
+- **Documentation:** [docs.cavos.xyz](https://docs.cavos.xyz)
+- **OAuth Examples:** [OAUTH_EXAMPLE.md](./OAUTH_EXAMPLE.md)
+- **Discord:** [Community Support](https://discord.gg/Vvq2ekEV47)
 
-- 🔐 Client-side signing only
-- 🚫 Private keys never transmitted
-- ✅ Secure storage on device
-- 📊 Privacy-first analytics
-
-## Support
-
-- 📖 Documentation: [docs.cavos.xyz](https://docs.cavos.xyz/)
-- 🐛 Issues: [GitHub](https://github.com/cavos-labs/aegis-sdk/issues)
-- 💬 Discord: [Community](https://discord.gg/Vvq2ekEV47)
-- 📧 Email: adrianvrj@cavos.xyz
-
-## License
+## 📄 License
 
 MIT License
 
 ---
 
-**Get started:** Grab your App ID from [aegis.cavos.xyz](https://aegis.cavos.xyz) and start building! 🚀
+**Choose your authentication method and start building! 🚀**
+
+- 🍎 **OAuth**: Best UX, social login
+- 📧 **Email/Password**: Simple, familiar
+- 🏠 **In-App Wallets**: Self-custody, DeFi-ready

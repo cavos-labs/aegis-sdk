@@ -1,14 +1,17 @@
 import { Account, Call } from 'starknet';
-import { 
-  WalletConfig, 
-  TransactionResult, 
-  ExecutionOptions, 
+import {
+  WalletConfig,
+  TransactionResult,
+  ExecutionOptions,
   NFTToken,
   NetworkType,
   PaymasterConfig,
   TrackingConfig,
   WalletTrackingData,
-  TransactionTrackingData
+  TransactionTrackingData,
+  SocialWalletData,
+  ValidationError,
+  AuthenticationError
 } from '../types';
 import { CryptoUtils } from './crypto';
 
@@ -20,6 +23,7 @@ import { TransactionManager } from '../transaction/transaction-manager';
 import { ContractManager } from '../contract/contract-manager';
 import { BalanceManager } from '../balance/balance-manager';
 import { TrackingManager } from '../tracking/tracking-manager';
+import { SocialAuthManager } from '../auth/social-auth-manager';
 
 export class AegisSDK {
   private storage: SecureStorage;
@@ -30,11 +34,12 @@ export class AegisSDK {
   private contractManager: ContractManager;
   private balanceManager: BalanceManager;
   private trackingManager: TrackingManager;
-  
-  
+  private socialAuthManager: SocialAuthManager | null = null;
+
   public readonly config: WalletConfig;
 
   constructor(config: WalletConfig) {
+    // Store config without enforcing wallet mode
     this.config = config;
 
     // Initialize managers
@@ -73,7 +78,7 @@ export class AegisSDK {
     };
     
     this.trackingManager = new TrackingManager(trackingConfig);
-    
+
     if (config.enableLogging) {
       console.log('[Aegis] Tracking initialized:', {
         appId: config.appId,
@@ -82,7 +87,33 @@ export class AegisSDK {
       });
     }
 
+    // Always initialize social login capabilities
+    this.initializeSocialLogin();
+
     // Auto-loading removed - users explicitly connect with their own stored keys
+  }
+
+  private initializeSocialLogin(): void {
+    const baseUrl = this.config.trackingApiUrl || 'https://services.cavos.xyz';
+
+    this.socialAuthManager = new SocialAuthManager(
+      this.config.appId,
+      baseUrl,
+      this.config.network,
+      this.config.enableLogging || false
+    );
+
+    // Connect social auth manager to other managers
+    this.accountManager.setSocialAuthManager(this.socialAuthManager);
+    this.transactionManager.setSocialAuthManager(this.socialAuthManager);
+
+    if (this.config.enableLogging) {
+      console.log('[Aegis] Social login initialized:', {
+        appId: this.config.appId,
+        baseUrl: baseUrl,
+        network: this.config.network
+      });
+    }
   }
 
   // ===============================
@@ -197,6 +228,237 @@ export class AegisSDK {
    */
   get isConnected(): boolean {
     return this.accountManager.getCurrentAccount() !== null;
+  }
+
+  // ===============================
+  // SOCIAL LOGIN AUTHENTICATION
+  // ===============================
+
+  /**
+   * Sign up a new user with email/password
+   * @param email User's email address
+   * @param password User's password
+   * @returns Social wallet data with user info and wallet address
+   * @throws {AuthenticationError} If sign up fails
+   */
+  async signUp(email: string, password: string): Promise<SocialWalletData> {
+    if (!this.socialAuthManager) {
+      throw new ValidationError('Social auth manager not initialized');
+    }
+
+    try {
+      const walletData = await this.socialAuthManager.signUp(email, password);
+
+      // Connect the social account
+      await this.accountManager.connectSocialAccount(walletData);
+      this.transactionManager.setSocialWallet(walletData);
+
+      if (this.config.enableLogging) {
+        console.log('[Aegis] Social sign up successful:', walletData.wallet.address);
+      }
+
+      return walletData;
+    } catch (error: any) {
+      if (this.config.enableLogging) {
+        console.error('[Aegis] Social sign up failed:', error);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Sign in an existing user with email/password
+   * @param email User's email address
+   * @param password User's password
+   * @returns Social wallet data with user info and wallet address
+   * @throws {AuthenticationError} If sign in fails
+   */
+  async signIn(email: string, password: string): Promise<SocialWalletData> {
+    if (!this.socialAuthManager) {
+      throw new ValidationError('Social auth manager not initialized');
+    }
+
+    try {
+      const walletData = await this.socialAuthManager.signIn(email, password);
+
+      // Connect the social account
+      await this.accountManager.connectSocialAccount(walletData);
+      this.transactionManager.setSocialWallet(walletData);
+
+      if (this.config.enableLogging) {
+        console.log('[Aegis] Social sign in successful:', walletData.wallet.address);
+      }
+
+      return walletData;
+    } catch (error: any) {
+      if (this.config.enableLogging) {
+        console.error('[Aegis] Social sign in failed:', error);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Sign out the current social login user (social login mode only)
+   * @throws {ValidationError} If called in in-app wallet mode
+   */
+  async signOut(): Promise<void> {
+    if (!this.socialAuthManager) {
+      return; // Already signed out
+    }
+
+    try {
+      await this.socialAuthManager.signOut();
+      this.disconnect(); // Clear local state
+
+      if (this.config.enableLogging) {
+        console.log('[Aegis] Social sign out completed');
+      }
+    } catch (error: any) {
+      if (this.config.enableLogging) {
+        console.error('[Aegis] Social sign out failed:', error);
+      }
+      // Don't throw on sign out failures, just log them
+    }
+  }
+
+  /**
+   * Get current social wallet data (social login mode only)
+   * @returns Social wallet data or null if not signed in
+   * @throws {ValidationError} If called in in-app wallet mode
+   */
+  getSocialWallet(): SocialWalletData | null {
+    return this.accountManager.getSocialWallet();
+  }
+
+  /**
+   * Check if user is authenticated with social login (social login mode only)
+   * @returns True if authenticated, false otherwise
+   * @throws {ValidationError} If called in in-app wallet mode
+   */
+  isSocialAuthenticated(): boolean {
+    return this.socialAuthManager?.isAuthenticated() || false;
+  }
+
+  // ===============================
+  // OAUTH URL GENERATION
+  // ===============================
+
+  /**
+   * Get Apple OAuth URL - open this URL in your preferred browser method
+   * @param redirectUri The redirect URI for your app (e.g., 'exp://192.168.1.16:8081' or 'yourapp://oauth')
+   * @returns OAuth URL to open
+   */
+  async getAppleOAuthUrl(redirectUri: string): Promise<string> {
+    if (!this.socialAuthManager) {
+      throw new ValidationError('Social auth manager not initialized');
+    }
+
+    return this.socialAuthManager.getAppleOAuthUrl(redirectUri);
+  }
+
+  /**
+   * Get Google OAuth URL - open this URL in your preferred browser method
+   * @param redirectUri The redirect URI for your app (e.g., 'exp://192.168.1.16:8081' or 'yourapp://oauth')
+   * @returns OAuth URL to open
+   */
+  async getGoogleOAuthUrl(redirectUri: string): Promise<string> {
+    if (!this.socialAuthManager) {
+      throw new ValidationError('Social auth manager not initialized');
+    }
+
+    return this.socialAuthManager.getGoogleOAuthUrl(redirectUri);
+  }
+
+  /**
+   * Handle OAuth callback data and connect the social account
+   * Use this after WebBrowser.openAuthSessionAsync() or similar returns with user data
+   * @param callbackData The data returned from OAuth (could be URL string or parsed object)
+   */
+  async handleOAuthCallback(callbackData: string | any): Promise<void> {
+    if (!this.socialAuthManager) {
+      throw new ValidationError('Social auth manager not initialized');
+    }
+
+    try {
+      const walletData = await this.socialAuthManager.parseOAuthCallback(callbackData);
+
+      // Connect the social account
+      await this.accountManager.connectSocialAccount(walletData);
+      this.transactionManager.setSocialWallet(walletData);
+
+      if (this.config.enableLogging) {
+        console.log('[Aegis] OAuth callback handled successfully:', walletData.wallet.address);
+      }
+    } catch (error: any) {
+      if (this.config.enableLogging) {
+        console.error('[Aegis] OAuth callback handling failed:', error);
+      }
+      throw error;
+    }
+  }
+
+  // ===============================
+  // MULTI-WALLET MANAGEMENT
+  // ===============================
+
+  /**
+   * Get the currently active wallet type
+   * @returns 'social' if social wallet is connected, 'in-app' if in-app wallet is connected, null if none
+   */
+  getActiveWalletType(): 'social' | 'in-app' | null {
+    const hasSocialWallet = this.accountManager.isSocialLoginMode();
+    const hasInAppWallet = this.accountManager.getCurrentAccount() !== null && !hasSocialWallet;
+
+    if (hasSocialWallet) return 'social';
+    if (hasInAppWallet) return 'in-app';
+    return null;
+  }
+
+  /**
+   * Get information about all connected wallets
+   * @returns Object containing wallet status information
+   */
+  getWalletStatus() {
+    const socialWallet = this.accountManager.getSocialWallet();
+    const inAppAccount = this.accountManager.getCurrentAccount();
+    const activeType = this.getActiveWalletType();
+
+    return {
+      activeWalletType: activeType,
+      social: {
+        connected: socialWallet !== null,
+        address: socialWallet?.wallet?.address || null,
+        email: socialWallet?.email || null
+      },
+      inApp: {
+        connected: inAppAccount !== null && !this.accountManager.isSocialLoginMode(),
+        address: inAppAccount?.address || null
+      }
+    };
+  }
+
+  /**
+   * Check if any wallet is connected (either social or in-app)
+   * @returns True if any wallet type is connected
+   */
+  isWalletConnected(): boolean {
+    return this.getActiveWalletType() !== null;
+  }
+
+  /**
+   * Disconnect all wallets (both social and in-app)
+   */
+  async disconnectAllWallets(): Promise<void> {
+    // Disconnect social wallet if connected
+    if (this.accountManager.isSocialLoginMode()) {
+      await this.signOut();
+    }
+
+    // Disconnect in-app wallet if connected
+    if (this.accountManager.getCurrentAccount()) {
+      this.accountManager.disconnectAccount();
+    }
   }
 
   // ===============================

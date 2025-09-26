@@ -2,6 +2,7 @@ import { Account, Call } from 'starknet';
 
 export type NetworkType = 'SN_MAINNET' | 'SN_SEPOLIA' | 'SN_DEVNET';
 export type AccountType = 'argentX' | 'braavos' | 'devnet';
+export type WalletMode = 'in-app' | 'social-login';
 
 export interface WalletConfig {
   network: NetworkType;
@@ -12,10 +13,13 @@ export interface WalletConfig {
   maxRetries?: number;
   batchSize?: number;
   enableLogging?: boolean;
-  
-  // Tracking configuration
-  appId: string;                            // Developer's app identifier (required)
-  trackingApiUrl?: string;                  // Custom base URL (default: https://services.cavos.xyz)
+
+  // Wallet mode configuration (deprecated - both modes now available simultaneously)
+  walletMode?: WalletMode;
+
+  // Tracking configuration (also used for social login in social-login mode)
+  appId: string;                            // Developer's app identifier (required) - used for both tracking and social login
+  trackingApiUrl?: string;                  // Custom base URL (default: https://services.cavos.xyz) - used for both tracking and social login
   trackingTimeout?: number;                 // Request timeout in ms (default: 5000)
 }
 
@@ -25,6 +29,28 @@ export interface WalletAccount {
   accountType: AccountType;
   isDeployed: boolean;
   network: string;
+}
+
+export interface SocialWalletData {
+  user_id: string;
+  email: string;
+  organization: {
+    org_id: string;
+    org_name: string;
+  };
+  wallet: {
+    address: string;
+    network: string;
+  };
+  authData: {
+    access_token: string;
+    refresh_token: string;
+    expires_in: number;
+  };
+  walletStatus?: {
+    deploymentFailed?: boolean;
+    message?: string;
+  };
 }
 
 export interface TransactionResult {
@@ -134,6 +160,21 @@ export class UserRejectionError extends WalletError {
 
 export class DeploymentError extends WalletError {
   code = 'DEPLOYMENT_ERROR';
+  recoverable = true;
+}
+
+export class AuthenticationError extends WalletError {
+  code = 'AUTHENTICATION_ERROR';
+  recoverable = false;
+}
+
+export class TokenExpiredError extends WalletError {
+  code = 'TOKEN_EXPIRED';
+  recoverable = true;
+}
+
+export class SocialLoginError extends WalletError {
+  code = 'SOCIAL_LOGIN_ERROR';
   recoverable = true;
 }
 

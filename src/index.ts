@@ -18,6 +18,9 @@ export { TransactionManager } from './transaction/transaction-manager';
 export { ContractManager } from './contract/contract-manager';
 export { BalanceManager } from './balance/balance-manager';
 
+// Social login authentication
+export { SocialAuthManager } from './auth/social-auth-manager';
+
 // Utility functions
 export * from './utils/starknet-utils';
 

@@ -2,18 +2,75 @@ import { Account, ec, hash, CallData, CairoCustomEnum, CairoOption } from 'stark
 import { CryptoUtils } from '../core/crypto';
 import { SecureStorage } from '../storage/secure-storage';
 import { NetworkManager } from '../network/network-manager';
-import { AccountType, WalletAccount, DeploymentError, ValidationError } from '../types';
+import { AccountType, WalletAccount, DeploymentError, ValidationError, SocialWalletData } from '../types';
+import { SocialAuthManager } from '../auth/social-auth-manager';
 
 export class AccountManager {
   private storage: SecureStorage;
   private network: NetworkManager;
   private currentAccount: Account | null = null;
   private enableLogging: boolean;
+  private socialAuthManager: SocialAuthManager | null = null;
+  private currentSocialWallet: SocialWalletData | null = null;
 
   constructor(storage: SecureStorage, network: NetworkManager, enableLogging: boolean = false) {
     this.storage = storage;
     this.network = network;
     this.enableLogging = enableLogging;
+  }
+
+  // ===============================
+  // SOCIAL LOGIN INTEGRATION
+  // ===============================
+
+  setSocialAuthManager(socialAuthManager: SocialAuthManager): void {
+    this.socialAuthManager = socialAuthManager;
+  }
+
+  async connectSocialAccount(walletData: SocialWalletData): Promise<string> {
+    if (!walletData.wallet?.address) {
+      throw new ValidationError('Invalid social wallet data: missing address');
+    }
+
+    // Store the social wallet data
+    this.currentSocialWallet = walletData;
+
+    // Create a mock Account object for consistency with existing code
+    // This account won't be used for actual signing since social login uses server-side execution
+    const mockAccount = this.createMockAccountFromSocial(walletData);
+    this.currentAccount = mockAccount;
+
+    if (this.enableLogging) {
+      console.log('[AccountManager] Social account connected:', walletData.wallet.address);
+    }
+
+    return walletData.wallet.address;
+  }
+
+  getSocialWallet(): SocialWalletData | null {
+    return this.currentSocialWallet;
+  }
+
+  isSocialLoginMode(): boolean {
+    return this.currentSocialWallet !== null;
+  }
+
+  private createMockAccountFromSocial(walletData: SocialWalletData): Account {
+    // Create a mock Account object that provides the interface expected by other components
+    // The private key is set to a placeholder since actual signing happens server-side
+    const provider = this.network.getProvider();
+    const mockPrivateKey = '0x1'; // Placeholder - not used for actual signing
+
+    const mockAccount = new Account(provider, walletData.wallet.address, mockPrivateKey);
+
+    // Override the execute method to throw an error if called directly
+    // Social login transactions should go through the social transaction manager
+    const originalExecute = mockAccount.execute.bind(mockAccount);
+    mockAccount.execute = () => {
+      throw new Error('Social login accounts cannot execute transactions directly. Use the SDK\'s execute methods.');
+    };
+
+    return mockAccount;
   }
 
   generatePrivateKey(): string {
@@ -146,6 +203,11 @@ export class AccountManager {
 
   disconnectAccount(): void {
     this.currentAccount = null;
+    this.currentSocialWallet = null;
+
+    if (this.enableLogging) {
+      console.log('[AccountManager] Account disconnected');
+    }
   }
 
   // storeKeyAndConnect removed - users handle their own storage, use connectAccount directly
