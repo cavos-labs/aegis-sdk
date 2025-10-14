@@ -261,7 +261,7 @@ export class SocialAuthManager {
         throw new AuthenticationError(`Sign up failed: Invalid response structure. Missing authData or tokens. Response: ${JSON.stringify(walletData)}`);
       }
 
-      if (!responseData.wallet || !responseData.wallet.address) {
+      if (!responseData.wallet || !responseData.wallet.data || !responseData.wallet.data.address) {
         throw new AuthenticationError(`Sign up failed: Invalid response structure. Missing wallet data. Response: ${JSON.stringify(walletData)}`);
       }
 
@@ -271,8 +271,8 @@ export class SocialAuthManager {
         email: responseData.email,
         organization: responseData.organization,
         wallet: {
-          address: responseData.wallet.address,
-          network: responseData.wallet.network
+          address: responseData.wallet.data.address,
+          network: this.getNetworkString()
         },
         authData: {
           access_token: responseData.authData.accessToken,
