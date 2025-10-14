@@ -290,7 +290,7 @@ export class SocialAuthManager {
         console.log('[SocialAuthManager] Sign up successful for:', email);
       }
 
-      return walletData;
+      return typedWalletData;
     } catch (error: any) {
       if (this.enableLogging) {
         console.error('[SocialAuthManager] Sign up failed:', error);
