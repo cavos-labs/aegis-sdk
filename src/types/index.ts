@@ -178,6 +178,22 @@ export class SocialLoginError extends WalletError {
   recoverable = true;
 }
 
+// Password Reset Response
+export interface PasswordResetResponse {
+  message: string;
+  timestamp: number;
+}
+
+// Account Delete Response
+export interface AccountDeleteResponse {
+  user_id: string;
+  email: string;
+  org_id: string;
+  deletedWalletsCount: number;
+  timestamp: number;
+  alreadyDeletedFromAuth0?: boolean;
+}
+
 // Tracking interfaces
 export interface WalletTrackingData {
   app_id: string;
