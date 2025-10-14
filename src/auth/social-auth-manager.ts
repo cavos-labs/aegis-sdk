@@ -589,11 +589,11 @@ export class SocialAuthManager {
 
   /**
    * Recover existing session using stored access token
-   * @returns Promise with recovered wallet data
+   * Updates internal aegisAccount state with recovered session data
    * @throws AuthenticationError if no stored session found
    * @throws SocialLoginError if request fails
    */
-  async recoverSession(): Promise<SocialWalletData> {
+  async recoverSession(): Promise<void> {
     try {
       if (this.enableLogging) {
         console.log('[SocialAuthManager] Attempting session recovery');
@@ -666,7 +666,7 @@ export class SocialAuthManager {
         console.log('[SocialAuthManager] Session recovered successfully for:', data.email);
       }
 
-      return walletData;
+      // No return - just updates internal state
     } catch (error: any) {
       if (this.enableLogging) {
         console.error('[SocialAuthManager] Session recovery failed:', error);
