@@ -3,7 +3,9 @@ import {
   NetworkType,
   AuthenticationError,
   TokenExpiredError,
-  SocialLoginError
+  SocialLoginError,
+  PasswordResetResponse,
+  AccountDeleteResponse
 } from '../types';
 import { SecureStorage } from '../storage/secure-storage';
 
@@ -459,6 +461,222 @@ export class SocialAuthManager {
         console.error('[SocialAuthManager] Sign out failed:', error);
       }
       // Don't throw on sign out failures, just log them
+    }
+  }
+
+  // ===============================
+  // ACCOUNT MANAGEMENT METHODS
+  // ===============================
+
+  /**
+   * Trigger password reset email for a user
+   * @param email User's email address
+   * @returns Promise with generic success message
+   * @throws SocialLoginError if request fails
+   */
+  async passwordReset(email: string): Promise<PasswordResetResponse> {
+    try {
+      if (this.enableLogging) {
+        console.log('[SocialAuthManager] Triggering password reset for:', email);
+      }
+
+      const response = await fetch(`${this.baseUrl}/api/v1/external/auth/password/reset`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: email,
+          app_id: this.appId,
+          network: this.getNetworkString()
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new SocialLoginError(
+          `Password reset failed: ${response.status} ${JSON.stringify(errorData)}`
+        );
+      }
+
+      const data = await response.json();
+
+      if (this.enableLogging) {
+        console.log('[SocialAuthManager] Password reset email sent successfully');
+      }
+
+      return {
+        message: data.data?.message || data.message,
+        timestamp: data.data?.timestamp || Date.now()
+      };
+    } catch (error: any) {
+      if (this.enableLogging) {
+        console.error('[SocialAuthManager] Password reset failed:', error);
+      }
+
+      if (error instanceof SocialLoginError) {
+        throw error;
+      }
+
+      throw new SocialLoginError(`Password reset failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Delete user account from Auth0 and remove wallet data
+   * Requires valid authentication - will auto-refresh expired tokens
+   * @returns Promise with deletion details
+   * @throws AuthenticationError if not authenticated
+   * @throws SocialLoginError if request fails
+   */
+  async deleteAccount(): Promise<AccountDeleteResponse> {
+    try {
+      if (this.enableLogging) {
+        console.log('[SocialAuthManager] Attempting account deletion');
+      }
+
+      // Get valid access token (will auto-refresh if expired)
+      const accessToken = await this.getValidAccessToken();
+
+      const response = await fetch(`${this.baseUrl}/api/v1/external/auth/delete`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          app_id: this.appId
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new SocialLoginError(
+          `Account deletion failed: ${response.status} ${JSON.stringify(errorData)}`
+        );
+      }
+
+      const responseData = await response.json();
+
+      // Clear local storage after successful deletion
+      await this.clearStoredTokens();
+      await this.clearWalletData();
+
+      if (this.enableLogging) {
+        console.log('[SocialAuthManager] Account deleted successfully');
+      }
+
+      return {
+        user_id: responseData.data.user_id,
+        email: responseData.data.email,
+        org_id: responseData.data.org_id,
+        deletedWalletsCount: responseData.data.deletedWalletsCount,
+        timestamp: responseData.data.timestamp,
+        alreadyDeletedFromAuth0: responseData.data.alreadyDeletedFromAuth0
+      };
+    } catch (error: any) {
+      if (this.enableLogging) {
+        console.error('[SocialAuthManager] Account deletion failed:', error);
+      }
+
+      if (error instanceof AuthenticationError || error instanceof SocialLoginError) {
+        throw error;
+      }
+
+      throw new SocialLoginError(`Account deletion failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Recover existing session using stored access token
+   * @returns Promise with recovered wallet data
+   * @throws AuthenticationError if no stored session found
+   * @throws SocialLoginError if request fails
+   */
+  async recoverSession(): Promise<SocialWalletData> {
+    try {
+      if (this.enableLogging) {
+        console.log('[SocialAuthManager] Attempting session recovery');
+      }
+
+      // Get stored tokens
+      const tokens = await this.getStoredTokens();
+
+      if (!tokens) {
+        throw new AuthenticationError('No stored session found. Please sign in.');
+      }
+
+      const response = await fetch(`${this.baseUrl}/api/v1/external/auth/session/recover`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${tokens.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          app_id: this.appId
+        }),
+      });
+
+      if (!response.ok) {
+        // Session recovery failed, clear stored data
+        await this.clearStoredTokens();
+        await this.clearWalletData();
+
+        const errorData = await response.json().catch(() => ({}));
+        throw new AuthenticationError(
+          `Session recovery failed: ${response.status}. Please sign in again.`
+        );
+      }
+
+      const responseData = await response.json();
+
+      // Validate response structure
+      if (!responseData.success || !responseData.data) {
+        throw new AuthenticationError('Invalid session recovery response');
+      }
+
+      const data = responseData.data;
+
+      // Transform to SocialWalletData format
+      const walletData: SocialWalletData = {
+        user_id: data.user_id,
+        email: data.email,
+        organization: data.organization,
+        wallet: data.wallet,
+        authData: {
+          access_token: data.authData?.accessToken || tokens.access_token,
+          refresh_token: data.authData?.refreshToken || tokens.refresh_token,
+          expires_in: data.authData?.expiresIn || 300
+        },
+        walletStatus: data.walletStatus
+      };
+
+      // Store updated tokens if provided
+      if (data.authData) {
+        await this.storeTokens(
+          walletData.authData.access_token,
+          walletData.authData.refresh_token
+        );
+      }
+
+      // Store wallet data
+      await this.storeWalletData(walletData);
+
+      if (this.enableLogging) {
+        console.log('[SocialAuthManager] Session recovered successfully for:', data.email);
+      }
+
+      return walletData;
+    } catch (error: any) {
+      if (this.enableLogging) {
+        console.error('[SocialAuthManager] Session recovery failed:', error);
+      }
+
+      if (error instanceof AuthenticationError) {
+        throw error;
+      }
+
+      throw new SocialLoginError(`Session recovery failed: ${error.message}`);
     }
   }
 
