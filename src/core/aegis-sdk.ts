@@ -323,6 +323,91 @@ export class AegisSDK {
   }
 
   /**
+   * Request password reset email for a user
+   * @param email User's email address
+   * @returns Password reset response with confirmation message
+   * @throws {AuthenticationError} If request fails
+   */
+  async passwordReset(email: string): Promise<any> {
+    if (!this.socialAuthManager) {
+      throw new ValidationError('Social auth manager not initialized');
+    }
+
+    try {
+      const response = await this.socialAuthManager.passwordReset(email);
+
+      if (this.config.enableLogging) {
+        console.log('[Aegis] Password reset email sent');
+      }
+
+      return response;
+    } catch (error: any) {
+      if (this.config.enableLogging) {
+        console.error('[Aegis] Password reset failed:', error);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Delete the current user's account and all associated data
+   * @returns Account deletion response with details
+   * @throws {AuthenticationError} If user is not authenticated or deletion fails
+   */
+  async deleteAccount(): Promise<any> {
+    if (!this.socialAuthManager) {
+      throw new ValidationError('Social auth manager not initialized');
+    }
+
+    try {
+      const response = await this.socialAuthManager.deleteAccount();
+      this.disconnect(); // Clear local state after deletion
+
+      if (this.config.enableLogging) {
+        console.log('[Aegis] Account deleted successfully');
+      }
+
+      return response;
+    } catch (error: any) {
+      if (this.config.enableLogging) {
+        console.error('[Aegis] Account deletion failed:', error);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Recover user session using stored tokens or provided access token
+   * @param accessToken Optional access token to use instead of stored token
+   * @returns Social wallet data for the recovered session
+   * @throws {AuthenticationError} If no stored session found or recovery fails
+   */
+  async recoverSession(accessToken?: string): Promise<SocialWalletData> {
+    if (!this.socialAuthManager) {
+      throw new ValidationError('Social auth manager not initialized');
+    }
+
+    try {
+      const walletData = await this.socialAuthManager.recoverSession(accessToken);
+
+      // Connect the social account
+      await this.accountManager.connectSocialAccount(walletData);
+      this.transactionManager.setSocialWallet(walletData);
+
+      if (this.config.enableLogging) {
+        console.log('[Aegis] Session recovered successfully:', walletData.wallet.address);
+      }
+
+      return walletData;
+    } catch (error: any) {
+      if (this.config.enableLogging) {
+        console.error('[Aegis] Session recovery failed:', error);
+      }
+      throw error;
+    }
+  }
+
+  /**
    * Get current social wallet data (social login mode only)
    * @returns Social wallet data or null if not signed in
    * @throws {ValidationError} If called in in-app wallet mode

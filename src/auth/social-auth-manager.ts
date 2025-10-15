@@ -588,28 +588,36 @@ export class SocialAuthManager {
   }
 
   /**
-   * Recover existing session using stored access token
+   * Recover existing session using stored access token or provided token
    * Updates internal aegisAccount state with recovered session data
-   * @throws AuthenticationError if no stored session found
+   * @param accessToken Optional access token to use instead of stored token
+   * @returns Social wallet data for the recovered session
+   * @throws AuthenticationError if no stored session found and no token provided
    * @throws SocialLoginError if request fails
    */
-  async recoverSession(): Promise<void> {
+  async recoverSession(accessToken?: string): Promise<SocialWalletData> {
     try {
       if (this.enableLogging) {
         console.log('[SocialAuthManager] Attempting session recovery');
       }
 
-      // Get stored tokens
-      const tokens = await this.getStoredTokens();
+      // Use provided token or get stored tokens
+      let tokenToUse: string;
 
-      if (!tokens) {
-        throw new AuthenticationError('No stored session found. Please sign in.');
+      if (accessToken) {
+        tokenToUse = accessToken;
+      } else {
+        const tokens = await this.getStoredTokens();
+        if (!tokens) {
+          throw new AuthenticationError('No stored session found. Please sign in.');
+        }
+        tokenToUse = tokens.access_token;
       }
 
       const response = await fetch(`${this.baseUrl}/api/v1/external/auth/session/recover`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${tokens.access_token}`,
+          'Authorization': `Bearer ${tokenToUse}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -644,8 +652,8 @@ export class SocialAuthManager {
         organization: data.organization,
         wallet: data.wallet,
         authData: {
-          access_token: data.authData?.accessToken || tokens.access_token,
-          refresh_token: data.authData?.refreshToken || tokens.refresh_token,
+          access_token: data.authData?.accessToken || tokenToUse,
+          refresh_token: data.authData?.refreshToken || '',
           expires_in: data.authData?.expiresIn || 300
         },
         walletStatus: data.walletStatus
@@ -666,7 +674,7 @@ export class SocialAuthManager {
         console.log('[SocialAuthManager] Session recovered successfully for:', data.email);
       }
 
-      // No return - just updates internal state
+      return walletData;
     } catch (error: any) {
       if (this.enableLogging) {
         console.error('[SocialAuthManager] Session recovery failed:', error);
