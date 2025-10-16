@@ -23,15 +23,13 @@ export class NetworkManager {
   private getDefaultNetworkConfigs(): Record<NetworkType, NetworkConfig> {
     return {
       SN_MAINNET: {
-        rpcUrl: process.env.EXPO_PUBLIC_MAINNET_RPC_URL || 
-                'https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_8/dql5pMT88iueZWl7L0yzT56uVk0EBU4L',
+        rpcUrl: 'https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_8/dql5pMT88iueZWl7L0yzT56uVk0EBU4L',
         chainId: constants.StarknetChainId.SN_MAIN,
         specVersion: '0.8.1',
         blockExplorer: 'https://starkscan.co',
       },
       SN_SEPOLIA: {
-        rpcUrl: process.env.EXPO_PUBLIC_SEPOLIA_RPC_URL || 
-                'https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_8/dql5pMT88iueZWl7L0yzT56uVk0EBU4L',
+        rpcUrl: 'https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_8/dql5pMT88iueZWl7L0yzT56uVk0EBU4L',
         chainId: constants.StarknetChainId.SN_SEPOLIA,
         specVersion: '0.8.1',
         blockExplorer: 'https://sepolia.starkscan.co',
