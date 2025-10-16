@@ -36,8 +36,7 @@ export class NetworkManager {
         faucetUrl: 'https://starknet-faucet.vercel.app',
       },
       SN_DEVNET: {
-        rpcUrl: process.env.EXPO_PUBLIC_LOCALHOST_RPC_URL || 
-                'http://localhost:5050/rpc',
+        rpcUrl: 'http://localhost:5050/rpc',
         chainId: constants.StarknetChainId.SN_SEPOLIA, // Using Sepolia chain ID for devnet
         specVersion: '0.8.1',
         blockExplorer: 'http://localhost:4000',
