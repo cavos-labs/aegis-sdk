@@ -3,6 +3,7 @@ import { Account, Call } from 'starknet';
 export type NetworkType = 'SN_MAINNET' | 'SN_SEPOLIA' | 'SN_DEVNET';
 export type AccountType = 'argentX' | 'braavos' | 'devnet';
 export type WalletMode = 'in-app' | 'social-login';
+export type OnrampProvider = 'RAMP_NETWORK';
 
 export interface WalletConfig {
   network: NetworkType;
@@ -101,31 +102,64 @@ export interface WalletContextValue {
   account: Account | null;
   address: string | null;
   network: string;
-  
+
   // Account management
   generateAccount: () => Promise<string>;
   connectAccount: (privateKey: string) => Promise<void>;
   deployAccount: (privateKey?: string) => Promise<void>;
   disconnectAccount: () => void;
   exportPrivateKey: () => Promise<string | null>;
-  
+
   // Transaction execution
   executeTransaction: (calls: Call[], options?: ExecutionOptions) => Promise<TransactionResult>;
   executeBatch: (calls: Call[], options?: ExecutionOptions) => Promise<TransactionResult>;
   addToQueue: (calls: Call[]) => void;
-  
+
   // Contract interactions
   callContract: (address: string, method: string, args: any[]) => Promise<any>;
   estimateGas: (calls: Call[]) => Promise<string>;
-  
+
   // Balance queries
   getETHBalance: (address?: string) => Promise<string>;
   getERC20Balance: (tokenAddress: string, decimals?: number, userAddress?: string) => Promise<string>;
   getERC721Tokens: (contractAddress: string, userAddress?: string) => Promise<NFTToken[]>;
-  
+
   // Utilities
   waitForTransaction: (txHash: string) => Promise<boolean>;
   getTransactionStatus: (txHash: string) => Promise<'pending' | 'confirmed' | 'failed'>;
+}
+
+/**
+ * Configuration options for onramp link generation
+ */
+export interface OnrampOptions {
+  /**
+   * The cryptocurrency asset to purchase
+   * Examples: 'STARKNET_USDC', 'STARKNET_ETH', 'STARKNET_STRK'
+   * @default 'STARKNET_USDC'
+   */
+  outAsset?: string;
+
+  /**
+   * The fiat currency to spend
+   * Examples: 'USD', 'EUR', 'GBP'
+   * @default 'USD'
+   */
+  inAsset?: string;
+
+  /**
+   * The amount of fiat currency (in smallest units, e.g., cents for USD)
+   * Example: '10000' for $100.00
+   * @optional
+   */
+  inAssetValue?: string;
+
+  /**
+   * URL of the host application's logo to display in Ramp Network interface
+   * Must be a publicly accessible HTTPS URL
+   * @optional
+   */
+  hostLogoUrl?: string;
 }
 
 export abstract class WalletError extends Error {

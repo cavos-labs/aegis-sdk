@@ -11,7 +11,8 @@ import {
   TransactionTrackingData,
   SocialWalletData,
   ValidationError,
-  AuthenticationError
+  AuthenticationError,
+  OnrampProvider
 } from '../types';
 import { CryptoUtils } from './crypto';
 
@@ -883,6 +884,126 @@ export class AegisSDK {
     const contractAmount = (amountBigInt * multiplier).toString();
 
     return this.execute(tokenAddress, 'approve', [spender, contractAmount]);
+  }
+
+  // ===============================
+  // ONRAMP INTEGRATION
+  // ===============================
+
+  /**
+   * Get an onramp URL for purchasing crypto with fiat
+   * @param provider The onramp provider to use (e.g., 'RAMP_NETWORK')
+   * @returns Complete onramp URL with pre-filled wallet address
+   * @throws {Error} If no account is connected
+   * @throws {Error} If network is Sepolia (onramp only available on mainnet)
+   * @throws {ValidationError} If address format is invalid
+   *
+   * @example
+   * ```typescript
+   * const sdk = new AegisSDK(config);
+   * await sdk.connectAccount(privateKey);
+   *
+   * const url = sdk.getOnramp('RAMP_NETWORK');
+   * window.open(url, '_blank');
+   * ```
+   */
+  public getOnramp(provider: OnrampProvider): string {
+    if (!this.address) {
+      throw new Error('No account connected. Call deployAccount() or connectAccount() first.');
+    }
+
+    // Validate network - onramp not available on Sepolia
+    if (this.config.network === 'SN_SEPOLIA') {
+      throw new Error('Onramp feature is not available on Sepolia network. Please use mainnet.');
+    }
+
+    // Handle different providers
+    switch (provider) {
+      case 'RAMP_NETWORK':
+        return this.getRampNetworkUrl();
+      default:
+        throw new Error(`Unknown onramp provider: ${provider}`);
+    }
+  }
+
+  /**
+   * Generate Ramp Network onramp URL
+   * @returns Complete Ramp Network URL
+   * @private
+   */
+  private getRampNetworkUrl(): string {
+    const formattedAddress = this.formatAddress(this.address!);
+    const url = this.buildRampNetworkUrl(formattedAddress);
+
+    if (this.config.enableLogging) {
+      console.log('[Aegis] Ramp Network onramp URL generated:', {
+        address: formattedAddress,
+        outAsset: 'STARKNET_USDC',
+        inAsset: 'USD'
+      });
+    }
+
+    return url;
+  }
+
+  /**
+   * Format a Starknet address to exactly 66 characters (0x + 64 hex chars)
+   * Pads with zeros after the 0x prefix if address is too short
+   * @param address The address to format
+   * @returns Formatted address with exactly 66 characters
+   * @throws {ValidationError} If address format is invalid
+   * @private
+   */
+  private formatAddress(address: string): string {
+    // Validate address starts with 0x
+    if (!address.startsWith('0x')) {
+      throw new ValidationError('Address must start with 0x');
+    }
+
+    // Remove 0x prefix for processing
+    const hexPart = address.slice(2);
+
+    // Validate hex characters
+    if (!/^[0-9a-fA-F]+$/.test(hexPart)) {
+      throw new ValidationError('Address contains invalid characters. Only hexadecimal characters are allowed.');
+    }
+
+    // Check if address is too long
+    if (hexPart.length > 64) {
+      throw new ValidationError(`Address is too long. Expected max 64 hex characters, got ${hexPart.length}`);
+    }
+
+    // Pad with zeros if needed (pad at the beginning after 0x)
+    const paddedHex = hexPart.padStart(64, '0');
+
+    // Return formatted address
+    return `0x${paddedHex}`;
+  }
+
+  /**
+   * Build complete Ramp Network onramp URL with query parameters
+   * @param formattedAddress The formatted wallet address (66 chars)
+   * @returns Complete Ramp Network URL
+   * @private
+   */
+  private buildRampNetworkUrl(formattedAddress: string): string {
+    const baseUrl = 'https://app.rampnetwork.com/exchange';
+
+    // Build query parameters
+    const params = new URLSearchParams();
+
+    // Required parameters
+    params.append('defaultFlow', 'ONRAMP');
+    params.append('enabledFlows', 'ONRAMP');
+    params.append('enabledCryptoAssets', 'STARKNET_*');
+    params.append('hostApiKey', 'p8skgorascdvryjzeqoah3xxfbpnx79nopzo6pzw');
+    params.append('userAddress', formattedAddress);
+    params.append('outAsset', 'STARKNET_USDC');
+    params.append('inAsset', 'USD');
+    params.append('inAssetValue', '10000');
+
+    // Construct final URL
+    return `${baseUrl}?${params.toString()}`;
   }
 
   // ===============================
