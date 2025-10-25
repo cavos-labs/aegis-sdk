@@ -144,6 +144,25 @@ const tokenBalance = await aegisAccount.getTokenBalance('0x123...', 18);
 const nfts = await aegisAccount.getNFTs('0x123...');
 ```
 
+### Onramp Integration
+Get onramp links to allow users to purchase cryptocurrency with fiat:
+
+```typescript
+// Get onramp URL using Ramp Network provider
+const onrampUrl = aegisAccount.getOnramp('RAMP_NETWORK');
+window.open(onrampUrl, '_blank');
+
+// Open in React Native
+import { Linking } from 'react-native';
+const url = aegisAccount.getOnramp('RAMP_NETWORK');
+await Linking.openURL(url);
+```
+
+**Available Providers:**
+- `'RAMP_NETWORK'`: Ramp Network (supports USDC with USD)
+
+**Note:** Onramp feature is only available on mainnet, not on Sepolia testnet.
+
 ### Status Methods
 ```typescript
 console.log('Address:', aegisAccount.address);
