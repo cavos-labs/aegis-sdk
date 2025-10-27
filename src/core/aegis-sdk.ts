@@ -12,7 +12,9 @@ import {
   SocialWalletData,
   ValidationError,
   AuthenticationError,
-  OnrampProvider
+  OnrampProvider,
+  ExportOTPRequest,
+  PrivateKeyExport
 } from '../types';
 import { CryptoUtils } from './crypto';
 
@@ -372,6 +374,99 @@ export class AegisSDK {
     } catch (error: any) {
       if (this.config.enableLogging) {
         console.error('[Aegis] Account deletion failed:', error);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Request an OTP for private key export (social login wallets only)
+   *
+   * Sends a 6-digit OTP code to the user's registered email address.
+   * The OTP is valid for 10 minutes and is required to export the private key.
+   *
+   * @returns Promise<ExportOTPRequest> Object containing email, expiration time, and timestamp
+   * @throws {ValidationError} If social auth manager is not initialized
+   * @throws {AuthenticationError} If user is not authenticated
+   * @throws {SocialLoginError} If the API request fails or rate limits are exceeded
+   *
+   * @example
+   * ```typescript
+   * const result = await aegisAccount.requestExportOTP();
+   * console.log(`OTP sent to ${result.email}`);
+   * console.log(`Valid for ${result.expiresIn} seconds`);
+   * ```
+   */
+  async requestExportOTP(): Promise<ExportOTPRequest> {
+    if (!this.socialAuthManager) {
+      throw new ValidationError('Social auth manager not initialized');
+    }
+
+    try {
+      const response = await this.socialAuthManager.requestExportOTP();
+
+      if (this.config.enableLogging) {
+        console.log('[Aegis] Export OTP requested successfully');
+      }
+
+      return response;
+    } catch (error: any) {
+      if (this.config.enableLogging) {
+        console.error('[Aegis] Export OTP request failed:', error?.message || String(error));
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Export private key with OTP verification (social login wallets only)
+   *
+   * Verifies the OTP code and returns the decrypted private key for the user's wallet.
+   *
+   * ⚠️ SECURITY WARNING:
+   * - The private key gives full control over the wallet and funds
+   * - Store the private key securely (never in plain text, logs, or version control)
+   * - Anyone with access to the private key can control the wallet
+   * - Cavos is not responsible for lost or stolen keys after export
+   *
+   * @param otp - The 6-digit OTP code received via email
+   * @returns Promise<PrivateKeyExport> Object containing private key, wallet address, and warning
+   * @throws {ValidationError} If social auth manager is not initialized
+   * @throws {SocialLoginError} If OTP is invalid, expired, or not provided
+   * @throws {AuthenticationError} If user is not authenticated
+   *
+   * @example
+   * ```typescript
+   * // First request OTP
+   * await aegisAccount.requestExportOTP();
+   *
+   * // User receives OTP via email
+   * const userOTP = '123456';
+   *
+   * // Export private key
+   * const result = await aegisAccount.exportPrivateKey(userOTP);
+   * console.warn(result.warning);
+   * console.log('Wallet:', result.wallet_address);
+   *
+   * // IMPORTANT: Store result.private_key securely
+   * ```
+   */
+  async exportPrivateKey(otp: string): Promise<PrivateKeyExport> {
+    if (!this.socialAuthManager) {
+      throw new ValidationError('Social auth manager not initialized');
+    }
+
+    try {
+      const response = await this.socialAuthManager.exportPrivateKey(otp);
+
+      if (this.config.enableLogging) {
+        console.log('[Aegis] Private key exported successfully');
+      }
+
+      return response;
+    } catch (error: any) {
+      if (this.config.enableLogging) {
+        console.error('[Aegis] Private key export failed:', error?.message || String(error));
       }
       throw error;
     }

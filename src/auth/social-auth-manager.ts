@@ -5,7 +5,9 @@ import {
   TokenExpiredError,
   SocialLoginError,
   PasswordResetResponse,
-  AccountDeleteResponse
+  AccountDeleteResponse,
+  ExportOTPRequest,
+  PrivateKeyExport
 } from '../types';
 import { SecureStorage } from '../storage/secure-storage';
 
@@ -584,6 +586,273 @@ export class SocialAuthManager {
       }
 
       throw new SocialLoginError(`Account deletion failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Request an OTP for private key export
+   *
+   * Sends a 6-digit OTP code to the user's registered email address.
+   * The OTP is valid for 10 minutes and is required to export the private key.
+   *
+   * @returns Promise<ExportOTPRequest> Object containing email, expiration time, and timestamp
+   * @throws {AuthenticationError} If user is not authenticated
+   * @throws {SocialLoginError} If the API request fails or rate limits are exceeded
+   *
+   * @example
+   * ```typescript
+   * try {
+   *   const result = await socialAuthManager.requestExportOTP();
+   *   console.log(`OTP sent to ${result.email}`);
+   *   console.log(`Expires in ${result.expiresIn} seconds`);
+   * } catch (error) {
+   *   if (error instanceof AuthenticationError) {
+   *     console.error('Please sign in first');
+   *   } else if (error instanceof SocialLoginError) {
+   *     console.error('Failed to request OTP:', error.message);
+   *   }
+   * }
+   * ```
+   */
+  async requestExportOTP(): Promise<ExportOTPRequest> {
+    if (this.enableLogging) {
+      console.log('[SocialAuthManager] Requesting export OTP');
+    }
+
+    try {
+      // Get valid access token (automatically refreshes if expired)
+      const accessToken = await this.getValidAccessToken();
+
+      // Make API request
+      const response = await fetch(`${this.baseUrl}/api/v1/external/wallet/export/request-otp`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`
+        }
+      });
+
+      const data = await response.json();
+
+      // Handle error responses
+      if (!response.ok) {
+        // Rate limit errors
+        if (response.status === 429) {
+          const retryAfter = data.details?.retryAfter || 'unknown';
+          throw new SocialLoginError(
+            data.message || `Rate limit exceeded. Retry after ${retryAfter} seconds`
+          );
+        }
+
+        // Wallet not found
+        if (response.status === 404) {
+          throw new SocialLoginError('No wallet found for this account');
+        }
+
+        // Other errors
+        throw new SocialLoginError(
+          data.message || 'Failed to request export OTP'
+        );
+      }
+
+      // Validate response structure
+      if (!data.success || !data.data) {
+        throw new SocialLoginError('Invalid response from server');
+      }
+
+      const { email, expiresIn, timestamp } = data.data;
+
+      // Validate required fields
+      if (!email || typeof expiresIn !== 'number' || typeof timestamp !== 'number') {
+        throw new SocialLoginError('Invalid response structure from server');
+      }
+
+      if (this.enableLogging) {
+        console.log('[SocialAuthManager] Export OTP sent successfully to', email);
+      }
+
+      return {
+        email,
+        expiresIn,
+        timestamp
+      };
+
+    } catch (error: any) {
+      if (this.enableLogging) {
+        console.error('[SocialAuthManager] Failed to request export OTP:', error?.message || String(error));
+      }
+
+      // Re-throw our custom errors
+      if (error instanceof AuthenticationError ||
+          error instanceof TokenExpiredError ||
+          error instanceof SocialLoginError) {
+        throw error;
+      }
+
+      // Wrap other errors
+      throw new SocialLoginError(
+        `Failed to request export OTP: ${error.message}`,
+        error
+      );
+    }
+  }
+
+  /**
+   * Export private key with OTP verification
+   *
+   * Verifies the OTP code and returns the decrypted private key for the user's wallet.
+   *
+   * ⚠️ SECURITY WARNING:
+   * - The private key gives full control over the wallet and funds
+   * - Store the private key securely (never in plain text, logs, or version control)
+   * - Anyone with access to the private key can control the wallet
+   * - Cavos is not responsible for lost or stolen keys after export
+   *
+   * @param otp - The 6-digit OTP code received via email
+   * @returns Promise<PrivateKeyExport> Object containing private key, wallet address, and warning
+   * @throws {SocialLoginError} If OTP is invalid, expired, or not provided
+   * @throws {AuthenticationError} If user is not authenticated
+   *
+   * @example
+   * ```typescript
+   * try {
+   *   // First request OTP
+   *   await socialAuthManager.requestExportOTP();
+   *
+   *   // User receives OTP via email
+   *   const userOTP = '123456'; // Get from user input
+   *
+   *   // Export private key
+   *   const result = await socialAuthManager.exportPrivateKey(userOTP);
+   *
+   *   console.warn(result.warning); // Show security warning
+   *   console.log('Wallet:', result.wallet_address);
+   *
+   *   // IMPORTANT: Store result.private_key securely
+   *   // Never log or expose the private key
+   *
+   * } catch (error) {
+   *   if (error instanceof SocialLoginError) {
+   *     console.error('Export failed:', error.message);
+   *   }
+   * }
+   * ```
+   */
+  async exportPrivateKey(otp: string): Promise<PrivateKeyExport> {
+    // Validate OTP parameter
+    if (!otp) {
+      throw new SocialLoginError('OTP is required');
+    }
+
+    if (typeof otp !== 'string') {
+      throw new SocialLoginError('OTP must be a string');
+    }
+
+    if (this.enableLogging) {
+      console.log('[SocialAuthManager] Attempting private key export');
+      // NEVER log the OTP value
+    }
+
+    try {
+      // Get valid access token (automatically refreshes if expired)
+      const accessToken = await this.getValidAccessToken();
+
+      // Make API request
+      const response = await fetch(`${this.baseUrl}/api/v1/external/wallet/export/verify`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`
+        },
+        body: JSON.stringify({ otp })
+      });
+
+      const data = await response.json();
+
+      // Handle error responses
+      if (!response.ok) {
+        // Invalid OTP
+        if (response.status === 401) {
+          throw new SocialLoginError('Invalid or expired OTP');
+        }
+
+        // Rate limit errors
+        if (response.status === 429) {
+          const retryAfter = data.details?.retryAfter || 'unknown';
+          const errorCode = data.code;
+
+          if (errorCode === 'DAILY_LIMIT_EXCEEDED') {
+            throw new SocialLoginError(
+              'Daily export limit exceeded. Please try again tomorrow'
+            );
+          } else if (errorCode === 'TEMPORARILY_BLOCKED') {
+            throw new SocialLoginError(
+              `Too many failed attempts. Please try again after ${retryAfter} seconds`
+            );
+          } else {
+            throw new SocialLoginError(
+              `Rate limit exceeded. Retry after ${retryAfter} seconds`
+            );
+          }
+        }
+
+        // Wallet not found
+        if (response.status === 404) {
+          throw new SocialLoginError('No wallet found for this account');
+        }
+
+        // Server errors
+        if (response.status >= 500) {
+          throw new SocialLoginError('Server error during export. Please try again later');
+        }
+
+        // Other errors
+        throw new SocialLoginError(
+          data.message || 'Failed to export private key'
+        );
+      }
+
+      // Validate response structure
+      if (!data.success || !data.data) {
+        throw new SocialLoginError('Invalid response from server');
+      }
+
+      const { private_key, wallet_address, warning } = data.data;
+
+      // Validate required fields
+      if (!private_key || !wallet_address || !warning) {
+        throw new SocialLoginError('Invalid response structure from server');
+      }
+
+      if (this.enableLogging) {
+        console.log('[SocialAuthManager] Private key exported successfully for wallet:', wallet_address);
+        // NEVER log the private key value
+      }
+
+      return {
+        private_key,
+        wallet_address,
+        warning
+      };
+
+    } catch (error: any) {
+      if (this.enableLogging) {
+        console.error('[SocialAuthManager] Failed to export private key:', error?.message || String(error));
+        // NEVER log the private key or OTP
+      }
+
+      // Re-throw our custom errors
+      if (error instanceof AuthenticationError ||
+          error instanceof TokenExpiredError ||
+          error instanceof SocialLoginError) {
+        throw error;
+      }
+
+      // Wrap other errors
+      throw new SocialLoginError(
+        `Failed to export private key: ${error.message}`,
+        error
+      );
     }
   }
 
