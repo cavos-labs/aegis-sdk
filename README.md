@@ -122,6 +122,36 @@ await aegisAccount.connectAccount('private-key'); // Connect existing
 aegisAccount.disconnect(); // Disconnect
 ```
 
+### Export Private Key (Social Login Wallets)
+Export private keys from social login wallets (OAuth/Email) to migrate to self-custody:
+
+```typescript
+// Step 1: Request OTP (sent to registered email)
+const otpRequest = await aegisAccount.requestExportOTP();
+console.log(`OTP sent to ${otpRequest.email}`);
+console.log(`Valid for ${otpRequest.expiresIn} seconds`);
+
+// Step 2: Export with OTP code
+const exportResult = await aegisAccount.exportPrivateKey('123456');
+console.warn(exportResult.warning); // Show security warning to user
+console.log('Wallet:', exportResult.wallet_address);
+
+// IMPORTANT: Store the private key securely
+const privateKey = exportResult.private_key;
+// Never log or expose the private key!
+```
+
+**Rate Limits:**
+- OTP Requests: 1 per 2 minutes
+- Failed Attempts: 5 per hour (temporary block)
+- Daily Exports: 3 per day
+
+**Security:**
+- Private key gives full control over wallet
+- Store securely (encrypted storage only)
+- Never share or log private keys
+- Cavos not responsible after export
+
 ### Transaction Methods
 ```typescript
 // Send transaction

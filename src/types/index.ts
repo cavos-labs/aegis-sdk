@@ -228,6 +228,19 @@ export interface AccountDeleteResponse {
   alreadyDeletedFromAuth0?: boolean;
 }
 
+// Private Key Export Response Types
+export interface ExportOTPRequest {
+  email: string;
+  expiresIn: number;
+  timestamp: number;
+}
+
+export interface PrivateKeyExport {
+  private_key: string;
+  wallet_address: string;
+  warning: string;
+}
+
 // Tracking interfaces
 export interface WalletTrackingData {
   app_id: string;
