@@ -27,7 +27,10 @@ export class TransactionManager {
 
   // Mutex for serializing transaction execution (prevents nonce collisions)
   private executionLock: Promise<void> = Promise.resolve();
-  private pendingNonceOffset: number = 0;
+
+  // Local nonce tracking for aggressive nonce management
+  private localNonce: bigint | null = null;
+  private nonceInitialized: boolean = false;
 
   constructor(
     network: NetworkManager,
@@ -41,6 +44,51 @@ export class TransactionManager {
     this.batchSize = batchSize;
     this.maxRetries = maxRetries;
     this.enableLogging = enableLogging;
+  }
+
+  /**
+   * Reset local nonce cache. Call this if you suspect nonce is out of sync.
+   */
+  resetNonceCache(): void {
+    this.localNonce = null;
+    this.nonceInitialized = false;
+    if (this.enableLogging) {
+      console.log('[TransactionManager] Nonce cache reset');
+    }
+  }
+
+  /**
+   * Get the next nonce to use. Fetches from network on first call,
+   * then tracks locally for subsequent transactions.
+   */
+  private async getNextNonce(): Promise<bigint> {
+    if (!this.account) {
+      throw new ExecutionError('No account connected');
+    }
+
+    if (!this.nonceInitialized || this.localNonce === null) {
+      // First time: fetch from network
+      const networkNonce = await this.network.getProvider().getNonceForAddress(this.account.address);
+      this.localNonce = BigInt(networkNonce);
+      this.nonceInitialized = true;
+      if (this.enableLogging) {
+        console.log(`[TransactionManager] Initialized nonce from network: ${this.localNonce}`);
+      }
+    }
+
+    return this.localNonce;
+  }
+
+  /**
+   * Increment local nonce after successful transaction submission
+   */
+  private incrementNonce(): void {
+    if (this.localNonce !== null) {
+      this.localNonce += 1n;
+      if (this.enableLogging) {
+        console.log(`[TransactionManager] Incremented local nonce to: ${this.localNonce}`);
+      }
+    }
   }
 
   setSocialAuthManager(socialAuthManager: SocialAuthManager): void {
@@ -240,11 +288,15 @@ export class TransactionManager {
     retries: number,
     timeout?: number
   ): Promise<TransactionResult> {
-    const RETRY_DELAY_MS = 2000;
+    const RETRY_DELAY_MS = 1000; // Reduced from 2000
+    const NONCE_RETRY_DELAY_MS = 100; // Almost instant retry for nonce errors
 
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
         const result = await executeFunction();
+
+        // SUCCESS! Increment local nonce for next transaction
+        this.incrementNonce();
 
         if (timeout && result.transactionHash) {
           const isConfirmed = await this.network.waitForTransaction(
@@ -268,34 +320,24 @@ export class TransactionManager {
           errorMessage.includes('Invalid transaction nonce');
 
         if (attempt < retries) {
-          if (this.enableLogging) {
-            console.warn(
-              `Transaction failed (attempt ${attempt + 1}/${retries + 1}): ${errorMessage}. Retrying in ${RETRY_DELAY_MS}ms...`
-            );
-          }
-
-          // If it's a nonce error, try to sync the account nonce before retrying
-          if (isNonceError && this.account) {
-            try {
-              if (this.enableLogging) {
-                console.log('[TransactionManager] Nonce error detected, syncing account nonce...');
-              }
-              // Force nonce refresh by fetching it from the network
-              const freshNonce = await this.network.getProvider().getNonceForAddress(this.account.address);
-              if (this.enableLogging) {
-                console.log(`[TransactionManager] Fresh nonce from network: ${freshNonce}`);
-              }
-              // The Account class internally caches nonce, we need to trigger a refresh
-              // by calling getNonce which should fetch the latest
-              await this.account.getNonce();
-            } catch (nonceRefreshError) {
-              if (this.enableLogging) {
-                console.warn('[TransactionManager] Failed to refresh nonce:', nonceRefreshError);
-              }
+          if (isNonceError) {
+            // NONCE ERROR: Increment local nonce and retry IMMEDIATELY
+            if (this.enableLogging) {
+              console.warn(
+                `[TransactionManager] Nonce error (attempt ${attempt + 1}/${retries + 1}). Incrementing local nonce and retrying instantly...`
+              );
             }
+            this.incrementNonce();
+            await this.delay(NONCE_RETRY_DELAY_MS); // Almost instant
+          } else {
+            // Other error: normal retry with delay
+            if (this.enableLogging) {
+              console.warn(
+                `Transaction failed (attempt ${attempt + 1}/${retries + 1}): ${errorMessage}. Retrying in ${RETRY_DELAY_MS}ms...`
+              );
+            }
+            await this.delay(RETRY_DELAY_MS);
           }
-
-          await this.delay(RETRY_DELAY_MS);
         } else {
           if (this.enableLogging) {
             console.error(
