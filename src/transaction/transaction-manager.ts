@@ -200,34 +200,60 @@ export class TransactionManager {
     timeout?: number
   ): Promise<TransactionResult> {
     const RETRY_DELAY_MS = 2000;
-    
+
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
         const result = await executeFunction();
-        
+
         if (timeout && result.transactionHash) {
           const isConfirmed = await this.network.waitForTransaction(
             result.transactionHash,
             timeout
           );
-          
+
           if (isConfirmed) {
             return { ...result, status: 'confirmed' };
           } else {
             throw new ExecutionError(`Transaction ${result.transactionHash} failed confirmation`);
           }
         }
-        
+
         return result;
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
-        
+
+        // Check if this is a nonce error
+        const isNonceError = errorMessage.toLowerCase().includes('nonce') ||
+          errorMessage.includes('Invalid transaction nonce');
+
         if (attempt < retries) {
           if (this.enableLogging) {
             console.warn(
               `Transaction failed (attempt ${attempt + 1}/${retries + 1}): ${errorMessage}. Retrying in ${RETRY_DELAY_MS}ms...`
             );
           }
+
+          // If it's a nonce error, try to sync the account nonce before retrying
+          if (isNonceError && this.account) {
+            try {
+              if (this.enableLogging) {
+                console.log('[TransactionManager] Nonce error detected, syncing account nonce...');
+              }
+              // Force nonce refresh by fetching it from the network
+              const freshNonce = await this.network.getProvider().getNonceForAddress(this.account.address);
+              if (this.enableLogging) {
+                console.log(`[TransactionManager] Fresh nonce from network: ${freshNonce}`);
+              }
+              // The Account class internally caches nonce, we need to trigger a refresh
+              // by calling getNonce which should fetch the latest
+              await this.account.getNonce();
+            } catch (nonceRefreshError) {
+              if (this.enableLogging) {
+                console.warn('[TransactionManager] Failed to refresh nonce:', nonceRefreshError);
+              }
+            }
+          }
+
           await this.delay(RETRY_DELAY_MS);
         } else {
           if (this.enableLogging) {
@@ -239,7 +265,7 @@ export class TransactionManager {
         }
       }
     }
-    
+
     throw new ExecutionError('Unexpected end of retry loop');
   }
 
@@ -258,7 +284,7 @@ export class TransactionManager {
     }
 
     const results: TransactionResult[] = [];
-    
+
     for (const batch of batches) {
       const result = await this.executeTransaction(batch, options);
       results.push(result);
@@ -298,14 +324,14 @@ export class TransactionManager {
     try {
       while (this.queue.length > 0) {
         const transaction = this.queue[0];
-        
+
         try {
           const result = await this.executeTransaction(transaction.calls);
-          
+
           if (result.transactionHash) {
             // Wait for confirmation
             const isConfirmed = await this.network.waitForTransaction(result.transactionHash);
-            
+
             if (isConfirmed) {
               if (this.enableLogging) {
                 console.log(`✅ Transaction ${transaction.id} confirmed: ${result.transactionHash}`);
@@ -317,7 +343,7 @@ export class TransactionManager {
           }
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
-          
+
           if (transaction.retryCount < transaction.maxRetries) {
             transaction.retryCount++;
             transaction.lastError = errorMessage;
@@ -326,11 +352,11 @@ export class TransactionManager {
                 `Transaction ${transaction.id} failed (attempt ${transaction.retryCount}/${transaction.maxRetries + 1}). Will retry...`
               );
             }
-            
+
             // Move to end of queue for retry
             this.queue.shift();
             this.queue.push(transaction);
-            
+
             await this.delay(2000);
           } else {
             if (this.enableLogging) {
