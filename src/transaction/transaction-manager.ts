@@ -25,6 +25,10 @@ export class TransactionManager {
   private socialAuthManager: SocialAuthManager | null = null;
   private currentSocialWallet: SocialWalletData | null = null;
 
+  // Mutex for serializing transaction execution (prevents nonce collisions)
+  private executionLock: Promise<void> = Promise.resolve();
+  private pendingNonceOffset: number = 0;
+
   constructor(
     network: NetworkManager,
     paymaster: PaymasterIntegration,
@@ -91,34 +95,71 @@ export class TransactionManager {
     const usePaymaster = options.usePaymaster !== false && this.paymaster.isAvailable();
     const retries = options.retries || this.maxRetries;
 
-    const executeFunction = async (): Promise<TransactionResult> => {
-      try {
-        let transactionHash: string;
+    // Use mutex to serialize transaction execution
+    // This prevents multiple transactions from using the same nonce
+    return this.withExecutionLock(async () => {
+      const executeFunction = async (): Promise<TransactionResult> => {
+        try {
+          let transactionHash: string;
 
-        if (usePaymaster) {
-          const result = await this.paymaster.execute(this.account!, calls);
-          transactionHash = result.transactionHash;
-        } else {
-          const response = await this.account!.execute(calls, {
-            maxFee: options.maxFee,
-            nonce: options.nonce,
-          });
-          transactionHash = response.transaction_hash;
+          if (usePaymaster) {
+            const result = await this.paymaster.execute(this.account!, calls);
+            transactionHash = result.transactionHash;
+          } else {
+            const response = await this.account!.execute(calls, {
+              maxFee: options.maxFee,
+              nonce: options.nonce,
+            });
+            transactionHash = response.transaction_hash;
+          }
+
+          return {
+            transactionHash,
+            status: 'pending',
+          };
+        } catch (error) {
+          throw new ExecutionError(`Transaction execution failed: ${error}`);
         }
+      };
 
-        return {
-          transactionHash,
-          status: 'pending',
-        };
-      } catch (error) {
-        throw new ExecutionError(`Transaction execution failed: ${error}`);
+      if (retries > 0) {
+        return this.executeWithRetries(executeFunction, retries, options.timeout);
+      } else {
+        return executeFunction();
       }
-    };
+    });
+  }
 
-    if (retries > 0) {
-      return this.executeWithRetries(executeFunction, retries, options.timeout);
-    } else {
-      return executeFunction();
+  /**
+   * Mutex to ensure only one transaction executes at a time.
+   * This prevents nonce collisions when multiple requests arrive simultaneously.
+   */
+  private async withExecutionLock<T>(fn: () => Promise<T>): Promise<T> {
+    // Chain this execution after any pending executions
+    const previousLock = this.executionLock;
+    let releaseLock: () => void;
+
+    this.executionLock = new Promise<void>((resolve) => {
+      releaseLock = resolve;
+    });
+
+    try {
+      // Wait for previous transaction to complete
+      await previousLock;
+
+      if (this.enableLogging) {
+        console.log('[TransactionManager] Acquired execution lock');
+      }
+
+      return await fn();
+    } finally {
+      // Small delay to allow nonce to propagate through the network
+      await this.delay(1000);
+
+      if (this.enableLogging) {
+        console.log('[TransactionManager] Released execution lock');
+      }
+      releaseLock!();
     }
   }
 
